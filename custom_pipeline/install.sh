@@ -39,7 +39,7 @@ echo "Port: $PI_PORT"
 
 # Function to run command on Pi
 run_on_pi() {
-    ssh -p "$PI_PORT" "$PI_USER@$PI_HOST" "$1"
+    ssh -o StrictHostKeyChecking=no -p "$PI_PORT" "$PI_USER@$PI_HOST" "$1"
 }
 
 # Function to copy file to Pi
@@ -48,10 +48,10 @@ copy_to_pi() {
     local dest="$2"
     if [ -d "$src" ]; then
         # If source is a directory, use -r flag
-        scp -P "$PI_PORT" -r "$src" "$PI_USER@$PI_HOST:$dest"
+        scp -o StrictHostKeyChecking=no -P "$PI_PORT" -r "$src" "$PI_USER@$PI_HOST:$dest"
     else
         # If source is a file, copy normally
-        scp -P "$PI_PORT" "$src" "$PI_USER@$PI_HOST:$dest"
+        scp -o StrictHostKeyChecking=no -P "$PI_PORT" "$src" "$PI_USER@$PI_HOST:$dest"
     fi
 }
 

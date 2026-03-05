@@ -52,3 +52,10 @@ temp_tts.wav
 
 others/
 docs/
+!custom_pipeline/docs/
+!custom_pipeline/docs/**
+!custom_pipeline/.env.example
+!custom_pipeline/.env.pi
+!custom_pipeline/Hey-Snowman_en_mac_v3_0_0.ppn
+!custom_pipeline/Snowman_en_raspberry-pi_v3_0_0.ppn
+!realtime/Snowman_en_raspberry-pi_v3_0_0.ppn

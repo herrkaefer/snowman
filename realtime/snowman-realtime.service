@@ -1,0 +1,17 @@
+[Unit]
+Description=Snowman Realtime Voice Assistant
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=snowman
+Group=audio
+WorkingDirectory=%h/voice-assistant-realtime/realtime
+EnvironmentFile=%h/voice-assistant-realtime/realtime/.env
+ExecStart=%h/voice-assistant-realtime/realtime/venv/bin/python3 %h/voice-assistant-realtime/realtime/main.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
