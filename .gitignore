@@ -51,6 +51,7 @@ temp_tts.wav
 .env.*.local
 
 others/
+plans/
 docs/
 !custom_pipeline/docs/
 !custom_pipeline/docs/**
