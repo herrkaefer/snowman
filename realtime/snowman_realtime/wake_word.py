@@ -5,6 +5,7 @@ import logging
 import pvporcupine
 from pvrecorder import PvRecorder
 
+from .audio import resolve_input_device_index
 from .config import Settings
 from .events import WakeDetected
 
@@ -19,8 +20,9 @@ class WakeWordDetector:
             access_key=settings.porcupine_access_key,
             keyword_paths=[settings.custom_wake_keyword_path],
         )
+        device_index = resolve_input_device_index(settings.audio_device_index)
         self._recorder = PvRecorder(
-            device_index=settings.audio_device_index,
+            device_index=device_index,
             frame_length=self._porcupine.frame_length,
         )
 

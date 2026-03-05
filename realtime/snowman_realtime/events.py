@@ -34,6 +34,11 @@ class ResponseInterrupted:
 
 
 @dataclass(frozen=True)
+class ResponsePlaybackDone:
+    reason: str
+
+
+@dataclass(frozen=True)
 class SessionError:
     message: str
 

@@ -9,7 +9,7 @@ OpenAI Realtime API based voice assistant for Raspberry Pi.
 - Use local Porcupine wake word detection
 - Stream audio directly to OpenAI Realtime over WebSocket
 - Play model audio responses immediately
-- Support basic interruption through server VAD and local playback reset
+- Use OpenAI Realtime turn detection for continuous multi-turn conversation
 
 ## Setup
 
@@ -49,7 +49,11 @@ python main.py
 
 - The default playback path uses `aplay` with raw PCM.
 - Wake word detection still uses a local `.ppn` file.
-- The default custom wake word path points to `Snowman_en_raspberry-pi_v3_0_0.ppn` in this directory.
+- The default custom wake word path points to `Snowman_en_raspberry-pi_v4_0_0.ppn` in this directory.
+- The default wake chime uses `wake_chime.wav` in this directory.
+- The default playback device is auto-detected and prefers `Google voiceHAT`.
+- The default Realtime session uses `semantic_vad` with `eagerness=low`.
+- Playback currently suppresses microphone upload until the reply finishes to reduce speaker feedback on Raspberry Pi.
 
 ## Service
 

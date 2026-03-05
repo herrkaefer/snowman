@@ -11,6 +11,7 @@ import websocket
 from .config import Settings
 from .events import (
     ResponseAudioChunk,
+    ResponsePlaybackDone,
     ResponseInterrupted,
     SessionClosed,
     SessionError,
@@ -24,6 +25,10 @@ LOGGER = logging.getLogger(__name__)
 EventHandler = Callable[[object], None]
 
 
+class RealtimeConnectionClosed(RuntimeError):
+    """Raised when the Realtime socket is no longer writable."""
+
+
 class RealtimeVoiceAgent:
     def __init__(self, settings: Settings, event_handler: EventHandler) -> None:
         self._settings = settings
@@ -35,7 +40,6 @@ class RealtimeVoiceAgent:
     def connect(self) -> None:
         headers = [
             f"Authorization: Bearer {self._settings.openai_api_key}",
-            f"OpenAI-Beta: {self._settings.openai_beta_header}",
         ]
         self._socket = websocket.create_connection(
             self._settings.realtime_ws_url,
@@ -53,15 +57,19 @@ class RealtimeVoiceAgent:
                         "input": {
                             "format": {
                                 "type": "audio/pcm",
+                                "rate": self._settings.realtime_sample_rate,
                             },
                             "turn_detection": {
-                                "type": "server_vad",
-                                "interrupt_response": self._settings.interruption_enabled,
+                                "type": self._settings.turn_detection_type,
+                                "eagerness": self._settings.turn_detection_eagerness,
+                                "create_response": self._settings.turn_detection_create_response,
+                                "interrupt_response": self._settings.turn_detection_interrupt_response,
                             },
                         },
                         "output": {
                             "format": {
                                 "type": "audio/pcm",
+                                "rate": self._settings.realtime_sample_rate,
                             },
                             "voice": self._settings.openai_voice,
                         },
@@ -73,18 +81,30 @@ class RealtimeVoiceAgent:
         self._receiver_thread.start()
 
     def send_audio(self, audio_bytes: bytes) -> None:
-        self._send(
-            {
-                "type": "input_audio_buffer.append",
-                "audio": base64.b64encode(audio_bytes).decode("ascii"),
-            }
-        )
+        try:
+            self._send(
+                {
+                    "type": "input_audio_buffer.append",
+                    "audio": base64.b64encode(audio_bytes).decode("ascii"),
+                }
+            )
+        except websocket.WebSocketConnectionClosedException as exc:
+            raise RealtimeConnectionClosed("Realtime socket is closed") from exc
 
     def interrupt(self) -> None:
         try:
             self._send({"type": "output_audio_buffer.clear"})
         except Exception:
             LOGGER.debug("Failed to send output_audio_buffer.clear", exc_info=True)
+
+    def clear_input_audio(self) -> None:
+        self._send({"type": "input_audio_buffer.clear"})
+
+    def commit_input_audio(self) -> None:
+        self._send({"type": "input_audio_buffer.commit"})
+
+    def create_response(self) -> None:
+        self._send({"type": "response.create"})
 
     def close(self) -> None:
         self._stop_event.set()
@@ -100,7 +120,7 @@ class RealtimeVoiceAgent:
 
     def _send(self, payload: dict[str, object]) -> None:
         if self._socket is None:
-            raise RuntimeError("Realtime socket is not connected")
+            raise RealtimeConnectionClosed("Realtime socket is not connected")
         self._socket.send(json.dumps(payload))
 
     def _recv_loop(self) -> None:
@@ -151,6 +171,7 @@ class RealtimeVoiceAgent:
             return
 
         if message_type in {"response.audio.done", "response.output_audio.done"}:
+            self._event_handler(ResponsePlaybackDone(reason=message_type))
             return
 
         if message_type in {"response.text.delta", "response.output_text.delta"}:

@@ -9,7 +9,8 @@ from dotenv import load_dotenv
 
 
 BASE_DIR = Path(__file__).resolve().parents[1]
-DEFAULT_WAKE_WORD_PATH = BASE_DIR / "Snowman_en_raspberry-pi_v3_0_0.ppn"
+DEFAULT_WAKE_WORD_PATH = BASE_DIR / "Snowman_en_raspberry-pi_v4_0_0.ppn"
+DEFAULT_WAKE_CHIME_PATH = BASE_DIR / "wake_chime.wav"
 DEFAULT_SYSTEM_PROMPT = (
     "You are Snowman, a concise and friendly bilingual voice assistant for Raspberry Pi. "
     "Keep replies short, natural, and speech-friendly. Prefer English for English input and "
@@ -41,6 +42,16 @@ class Settings:
     interruption_enabled: bool
     log_level: str
     system_prompt: str
+    wake_chime_path: str
+    playback_device: str
+    turn_detection_type: str
+    turn_detection_eagerness: str
+    turn_detection_create_response: bool
+    turn_detection_interrupt_response: bool
+    recording_start_timeout: float
+    recording_max_duration: float
+    recording_silence_duration: float
+    recording_rms_threshold: int
 
     @classmethod
     def load(cls) -> "Settings":
@@ -63,9 +74,11 @@ class Settings:
             openai_voice=os.getenv("OPENAI_VOICE", "alloy").strip(),
             openai_beta_header=os.getenv("OPENAI_BETA_HEADER", "realtime=v1").strip(),
             porcupine_access_key=porcupine_access_key,
-            custom_wake_keyword_path=os.getenv(
-                "CUSTOM_WAKE_KEYWORD_PATH", str(DEFAULT_WAKE_WORD_PATH)
-            ).strip(),
+            custom_wake_keyword_path=str(
+                _resolve_path(
+                    os.getenv("CUSTOM_WAKE_KEYWORD_PATH", str(DEFAULT_WAKE_WORD_PATH)).strip()
+                )
+            ),
             audio_device_index=int(os.getenv("AUDIO_DEVICE_INDEX", "-1")),
             input_frame_length=int(os.getenv("INPUT_FRAME_LENGTH", "512")),
             input_sample_rate=int(os.getenv("INPUT_SAMPLE_RATE", "16000")),
@@ -74,11 +87,44 @@ class Settings:
             interruption_enabled=_get_bool("INTERRUPTION_ENABLED", True),
             log_level=os.getenv("LOG_LEVEL", "INFO").strip().upper(),
             system_prompt=os.getenv("SYSTEM_PROMPT", DEFAULT_SYSTEM_PROMPT).strip(),
+            wake_chime_path=str(
+                _resolve_path(
+                    os.getenv("WAKE_CHIME_PATH", str(DEFAULT_WAKE_CHIME_PATH)).strip()
+                )
+            ),
+            playback_device=os.getenv("PLAYBACK_DEVICE", "auto").strip(),
+            turn_detection_type=os.getenv("TURN_DETECTION_TYPE", "semantic_vad").strip(),
+            turn_detection_eagerness=os.getenv("TURN_DETECTION_EAGERNESS", "low").strip(),
+            turn_detection_create_response=_get_bool("TURN_DETECTION_CREATE_RESPONSE", True),
+            turn_detection_interrupt_response=_get_bool(
+                "TURN_DETECTION_INTERRUPT_RESPONSE", False
+            ),
+            recording_start_timeout=float(os.getenv("RECORDING_START_TIMEOUT", "5.0")),
+            recording_max_duration=float(os.getenv("RECORDING_MAX_DURATION", "8.0")),
+            recording_silence_duration=float(os.getenv("RECORDING_SILENCE_DURATION", "0.8")),
+            recording_rms_threshold=int(os.getenv("RECORDING_RMS_THRESHOLD", "120")),
         )
 
     @property
     def realtime_ws_url(self) -> str:
         return f"{self.openai_realtime_url}?model={self.openai_realtime_model}"
+
+
+def _resolve_path(raw_path: str) -> Path:
+    path = Path(raw_path)
+    if path.is_absolute():
+        resolved = path
+    else:
+        resolved = (BASE_DIR / path).resolve()
+
+    if resolved.exists():
+        return resolved
+
+    latest_matching = sorted(BASE_DIR.glob("Snowman_en_raspberry-pi_v*_*.ppn"))
+    if latest_matching:
+        return latest_matching[-1].resolve()
+
+    return resolved
 
 
 def configure_logging(level_name: str) -> None:

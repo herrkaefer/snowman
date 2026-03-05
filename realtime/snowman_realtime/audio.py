@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import audioop
 import logging
+from pathlib import Path
+import re
 import struct
 import subprocess
 import threading
@@ -36,6 +38,54 @@ class PCMResampler:
         return converted
 
 
+def resolve_input_device_index(configured_index: int) -> int:
+    if configured_index >= 0:
+        return configured_index
+
+    devices = PvRecorder.get_available_devices()
+    preferred_markers = ("google voicehat", "voicehat", "microphone", "mic", "usb")
+
+    for index, name in enumerate(devices):
+        normalized = name.lower()
+        if any(marker in normalized for marker in preferred_markers):
+            LOGGER.info("Auto-selected input device %d: %s", index, name)
+            return index
+
+    LOGGER.info("No preferred input device found; using configured default index %d", configured_index)
+    return configured_index
+
+
+def resolve_playback_device(configured_device: str) -> str | None:
+    if configured_device and configured_device != "auto":
+        return configured_device
+
+    try:
+        result = subprocess.run(
+            ["aplay", "-l"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=True,
+        )
+    except Exception:
+        LOGGER.info("Could not inspect playback devices; using ALSA default output")
+        return None
+
+    preferred_markers = ("google voicehat", "voicehat", "usb", "speaker")
+    for line in result.stdout.splitlines():
+        normalized = line.lower()
+        if not any(marker in normalized for marker in preferred_markers):
+            continue
+        match = re.search(r"card (\d+): .*device (\d+):", line)
+        if match:
+            device = f"plughw:{match.group(1)},{match.group(2)}"
+            LOGGER.info("Auto-selected playback device %s from line: %s", device, line.strip())
+            return device
+
+    LOGGER.info("No preferred playback device found; using ALSA default output")
+    return None
+
+
 class MicrophoneStream:
     def __init__(self, device_index: int, frame_length: int) -> None:
         self._device_index = device_index
@@ -68,27 +118,31 @@ class MicrophoneStream:
 
 
 class RawAplayPlayer:
-    def __init__(self, sample_rate: int) -> None:
+    def __init__(self, sample_rate: int, playback_device: str | None = None) -> None:
         self._sample_rate = sample_rate
+        self._playback_device = playback_device
         self._process: subprocess.Popen[bytes] | None = None
         self._lock = threading.Lock()
 
     def _spawn(self) -> None:
         if self._process is not None and self._process.poll() is None:
             return
+        cmd = [
+            "aplay",
+            "-q",
+            "-t",
+            "raw",
+            "-f",
+            "S16_LE",
+            "-r",
+            str(self._sample_rate),
+            "-c",
+            "1",
+        ]
+        if self._playback_device:
+            cmd.extend(["-D", self._playback_device])
         self._process = subprocess.Popen(
-            [
-                "aplay",
-                "-q",
-                "-t",
-                "raw",
-                "-f",
-                "S16_LE",
-                "-r",
-                str(self._sample_rate),
-                "-c",
-                "1",
-            ],
+            cmd,
             stdin=subprocess.PIPE,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -117,9 +171,24 @@ class RawAplayPlayer:
         with self._lock:
             self._shutdown_locked(force=True)
 
+    def drain(self) -> None:
+        with self._lock:
+            self._shutdown_locked(force=False)
+
     def close(self) -> None:
         with self._lock:
             self._shutdown_locked(force=False)
+
+    def play_wav_file(self, path: str | Path, blocking: bool = True) -> None:
+        wav_path = str(path)
+        cmd = ["aplay", "-q"]
+        if self._playback_device:
+            cmd.extend(["-D", self._playback_device])
+        cmd.append(wav_path)
+        if blocking:
+            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     def _shutdown_locked(self, force: bool) -> None:
         if self._process is None:
