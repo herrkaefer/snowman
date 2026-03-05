@@ -10,11 +10,10 @@ from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_WAKE_WORD_PATH = BASE_DIR / "Snowman_en_raspberry-pi_v4_0_0.ppn"
-DEFAULT_WAKE_CHIME_PATH = BASE_DIR / "wake_chime.wav"
 DEFAULT_SYSTEM_PROMPT = (
-    "You are Snowman, a concise and friendly bilingual voice assistant for Raspberry Pi. "
-    "Keep replies short, natural, and speech-friendly. Prefer English for English input and "
-    "Simplified Chinese for Chinese input."
+    "You are Snowman, a concise bilingual voice assistant for Raspberry Pi. "
+    "Reply with exactly one short sentence unless the user explicitly asks for more detail. "
+    "Keep it natural and speech-friendly. Prefer English for English input and Simplified Chinese for Chinese input."
 )
 
 
@@ -42,8 +41,8 @@ class Settings:
     interruption_enabled: bool
     log_level: str
     system_prompt: str
-    wake_chime_path: str
     playback_device: str
+    output_gain: float
     turn_detection_type: str
     turn_detection_eagerness: str
     turn_detection_create_response: bool
@@ -52,6 +51,7 @@ class Settings:
     recording_max_duration: float
     recording_silence_duration: float
     recording_rms_threshold: int
+    recording_preroll_frames: int
 
     @classmethod
     def load(cls) -> "Settings":
@@ -87,22 +87,19 @@ class Settings:
             interruption_enabled=_get_bool("INTERRUPTION_ENABLED", True),
             log_level=os.getenv("LOG_LEVEL", "INFO").strip().upper(),
             system_prompt=os.getenv("SYSTEM_PROMPT", DEFAULT_SYSTEM_PROMPT).strip(),
-            wake_chime_path=str(
-                _resolve_path(
-                    os.getenv("WAKE_CHIME_PATH", str(DEFAULT_WAKE_CHIME_PATH)).strip()
-                )
-            ),
             playback_device=os.getenv("PLAYBACK_DEVICE", "auto").strip(),
-            turn_detection_type=os.getenv("TURN_DETECTION_TYPE", "semantic_vad").strip(),
+            output_gain=float(os.getenv("OUTPUT_GAIN", "0.5")),
+            turn_detection_type=os.getenv("TURN_DETECTION_TYPE", "none").strip(),
             turn_detection_eagerness=os.getenv("TURN_DETECTION_EAGERNESS", "low").strip(),
             turn_detection_create_response=_get_bool("TURN_DETECTION_CREATE_RESPONSE", True),
             turn_detection_interrupt_response=_get_bool(
                 "TURN_DETECTION_INTERRUPT_RESPONSE", False
             ),
-            recording_start_timeout=float(os.getenv("RECORDING_START_TIMEOUT", "5.0")),
+            recording_start_timeout=float(os.getenv("RECORDING_START_TIMEOUT", "8.0")),
             recording_max_duration=float(os.getenv("RECORDING_MAX_DURATION", "8.0")),
             recording_silence_duration=float(os.getenv("RECORDING_SILENCE_DURATION", "0.8")),
-            recording_rms_threshold=int(os.getenv("RECORDING_RMS_THRESHOLD", "120")),
+            recording_rms_threshold=int(os.getenv("RECORDING_RMS_THRESHOLD", "60")),
+            recording_preroll_frames=int(os.getenv("RECORDING_PREROLL_FRAMES", "8")),
         )
 
     @property

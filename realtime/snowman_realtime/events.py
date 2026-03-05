@@ -29,6 +29,16 @@ class ResponseAudioChunk:
 
 
 @dataclass(frozen=True)
+class ResponseTextDelta:
+    text: str
+
+
+@dataclass(frozen=True)
+class ResponseTextDone:
+    text: str
+
+
+@dataclass(frozen=True)
 class ResponseInterrupted:
     reason: str
 

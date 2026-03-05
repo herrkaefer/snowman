@@ -118,9 +118,15 @@ class MicrophoneStream:
 
 
 class RawAplayPlayer:
-    def __init__(self, sample_rate: int, playback_device: str | None = None) -> None:
+    def __init__(
+        self,
+        sample_rate: int,
+        playback_device: str | None = None,
+        output_gain: float = 1.0,
+    ) -> None:
         self._sample_rate = sample_rate
         self._playback_device = playback_device
+        self._output_gain = output_gain
         self._process: subprocess.Popen[bytes] | None = None
         self._lock = threading.Lock()
 
@@ -156,15 +162,18 @@ class RawAplayPlayer:
             assert self._process is not None
             if self._process.stdin is None:
                 raise RuntimeError("aplay stdin is not available")
+            scaled_bytes = audio_bytes
+            if self._output_gain != 1.0:
+                scaled_bytes = audioop.mul(audio_bytes, 2, self._output_gain)
             try:
-                self._process.stdin.write(audio_bytes)
+                self._process.stdin.write(scaled_bytes)
                 self._process.stdin.flush()
             except BrokenPipeError:
                 LOGGER.warning("Playback process closed unexpectedly; restarting")
                 self._shutdown_locked(force=True)
                 self._spawn()
                 assert self._process is not None and self._process.stdin is not None
-                self._process.stdin.write(audio_bytes)
+                self._process.stdin.write(scaled_bytes)
                 self._process.stdin.flush()
 
     def interrupt(self) -> None:
@@ -201,7 +210,7 @@ class RawAplayPlayer:
         if force:
             self._process.terminate()
         try:
-            self._process.wait(timeout=0.5 if force else 1.0)
+            self._process.wait(timeout=0.5 if force else 5.0)
         except subprocess.TimeoutExpired:
             self._process.kill()
             self._process.wait(timeout=1.0)

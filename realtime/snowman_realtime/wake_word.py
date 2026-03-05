@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 
 import pvporcupine
 from pvrecorder import PvRecorder
@@ -25,10 +26,24 @@ class WakeWordDetector:
             device_index=device_index,
             frame_length=self._porcupine.frame_length,
         )
+        self._started = False
 
-    def wait_for_wake(self) -> WakeDetected:
+    def start(self) -> None:
+        if self._started:
+            return
         self._recorder.start()
+        self._started = True
         LOGGER.info("Listening for wake word using device: %s", self._recorder.selected_device)
+
+    def stop(self) -> None:
+        if not self._started:
+            return
+        self._recorder.stop()
+        self._started = False
+
+    def wait_for_wake(self, timeout: float | None = None) -> WakeDetected | None:
+        self.start()
+        deadline = None if timeout is None else time.monotonic() + timeout
         try:
             while True:
                 pcm = self._recorder.read()
@@ -36,9 +51,23 @@ class WakeWordDetector:
                 if keyword_index >= 0:
                     LOGGER.info("Wake word detected")
                     return WakeDetected(keyword="snowman")
+                if deadline is not None and time.monotonic() >= deadline:
+                    return None
         finally:
-            self._recorder.stop()
+            self.stop()
+
+    def poll_for_wake(self, timeout: float) -> WakeDetected | None:
+        self.start()
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            pcm = self._recorder.read()
+            keyword_index = self._porcupine.process(pcm)
+            if keyword_index >= 0:
+                LOGGER.info("Wake word detected")
+                return WakeDetected(keyword="snowman")
+        return None
 
     def close(self) -> None:
+        self.stop()
         self._porcupine.delete()
         self._recorder.delete()

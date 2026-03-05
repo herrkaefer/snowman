@@ -12,6 +12,8 @@ from .config import Settings
 from .events import (
     ResponseAudioChunk,
     ResponsePlaybackDone,
+    ResponseTextDelta,
+    ResponseTextDone,
     ResponseInterrupted,
     SessionClosed,
     SessionError,
@@ -36,8 +38,20 @@ class RealtimeVoiceAgent:
         self._socket: websocket.WebSocket | None = None
         self._receiver_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
+        self._response_text_parts: list[str] = []
 
     def connect(self) -> None:
+        turn_detection: dict[str, object] | None
+        if self._settings.turn_detection_type.lower() in {"", "none", "off", "manual"}:
+            turn_detection = None
+        else:
+            turn_detection = {
+                "type": self._settings.turn_detection_type,
+                "eagerness": self._settings.turn_detection_eagerness,
+                "create_response": self._settings.turn_detection_create_response,
+                "interrupt_response": self._settings.turn_detection_interrupt_response,
+            }
+
         headers = [
             f"Authorization: Bearer {self._settings.openai_api_key}",
         ]
@@ -59,12 +73,7 @@ class RealtimeVoiceAgent:
                                 "type": "audio/pcm",
                                 "rate": self._settings.realtime_sample_rate,
                             },
-                            "turn_detection": {
-                                "type": self._settings.turn_detection_type,
-                                "eagerness": self._settings.turn_detection_eagerness,
-                                "create_response": self._settings.turn_detection_create_response,
-                                "interrupt_response": self._settings.turn_detection_interrupt_response,
-                            },
+                            "turn_detection": turn_detection,
                         },
                         "output": {
                             "format": {
@@ -104,7 +113,19 @@ class RealtimeVoiceAgent:
         self._send({"type": "input_audio_buffer.commit"})
 
     def create_response(self) -> None:
-        self._send({"type": "response.create"})
+        self._response_text_parts = []
+        self._send(
+            {
+                "type": "response.create",
+                "response": {
+                    "instructions": (
+                        "Do not greet, welcome, or introduce yourself. "
+                        "Answer only the user's most recent utterance in exactly one short sentence."
+                    ),
+                    "max_output_tokens": 80,
+                },
+            }
+        )
 
     def close(self) -> None:
         self._stop_event.set()
@@ -174,10 +195,25 @@ class RealtimeVoiceAgent:
             self._event_handler(ResponsePlaybackDone(reason=message_type))
             return
 
-        if message_type in {"response.text.delta", "response.output_text.delta"}:
+        if message_type in {
+            "response.text.delta",
+            "response.output_text.delta",
+            "response.audio_transcript.delta",
+            "response.output_audio_transcript.delta",
+        }:
             delta = str(message.get("delta", ""))
             if delta:
-                self._event_handler(TranscriptPartial(text=delta))
+                self._response_text_parts.append(delta)
+                self._event_handler(ResponseTextDelta(text=delta))
+            return
+
+        if message_type in {
+            "response.done",
+            "response.audio_transcript.done",
+            "response.output_audio_transcript.done",
+        }:
+            if self._response_text_parts:
+                self._event_handler(ResponseTextDone(text="".join(self._response_text_parts)))
             return
 
         if message_type in {
