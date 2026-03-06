@@ -99,7 +99,7 @@ class RealtimeVoiceAgent:
                     "audio": base64.b64encode(audio_bytes).decode("ascii"),
                 }
             )
-        except websocket.WebSocketConnectionClosedException as exc:
+        except (OSError, websocket.WebSocketConnectionClosedException) as exc:
             raise RealtimeConnectionClosed("Realtime socket is closed") from exc
 
     def interrupt(self) -> None:
@@ -124,9 +124,15 @@ class RealtimeVoiceAgent:
                 "response": {
                     "instructions": (
                         "Do not greet, welcome, or introduce yourself. "
-                        "Answer only the user's most recent utterance in exactly one short sentence."
+                        "Answer only the user's most recent utterance. "
+                        "Reply in one short sentence by default, and use two short sentences only when needed for clarity. "
+                        "Keep the answer brief and complete. "
+                        "Prefer a direct answer over explanation. "
+                        "Do not start with filler like 'okay', 'sure', or '当然'. "
+                        "Do not list multiple examples, options, or extra background unless the user asks for them. "
+                        "For translation requests, give just the translation unless the user asks for explanation."
                     ),
-                    "max_output_tokens": 80,
+                    "max_output_tokens": self._settings.response_max_output_tokens,
                 },
             }
         )
@@ -147,7 +153,10 @@ class RealtimeVoiceAgent:
     def _send(self, payload: dict[str, object]) -> None:
         if self._socket is None:
             raise RealtimeConnectionClosed("Realtime socket is not connected")
-        self._socket.send(json.dumps(payload))
+        try:
+            self._socket.send(json.dumps(payload))
+        except (OSError, websocket.WebSocketConnectionClosedException) as exc:
+            raise RealtimeConnectionClosed("Realtime socket is closed") from exc
 
     def _recv_loop(self) -> None:
         assert self._socket is not None

@@ -13,7 +13,12 @@ DEFAULT_WAKE_WORD_PATH = BASE_DIR / "Snowman_en_raspberry-pi_v4_0_0.ppn"
 DEFAULT_READY_CUE_PATH = BASE_DIR / "ready_cue.wav"
 DEFAULT_SYSTEM_PROMPT = (
     "You are Snowman, a concise bilingual voice assistant for Raspberry Pi. "
-    "Reply with exactly one short sentence unless the user explicitly asks for more detail. "
+    "Reply in one short sentence by default, and use two short sentences only when needed for clarity. "
+    "Keep spoken answers brief and complete. "
+    "Prefer a direct answer over explanation unless the user explicitly asks for more detail. "
+    "Do not start with filler like 'okay', 'sure', or '当然'. "
+    "Do not list multiple examples, options, or extra background unless asked. "
+    "For translation requests, give just the translation unless the user asks for explanation. "
     "Keep it natural and speech-friendly. Prefer English for English input and Simplified Chinese for Chinese input."
 )
 
@@ -43,6 +48,7 @@ class Settings:
     log_level: str
     system_prompt: str
     ready_cue_path: str
+    post_reply_cue_path: str
     playback_device: str
     output_gain: float
     turn_detection_type: str
@@ -54,6 +60,7 @@ class Settings:
     recording_silence_duration: float
     recording_rms_threshold: int
     recording_preroll_frames: int
+    response_max_output_tokens: int
 
     @classmethod
     def load(cls) -> "Settings":
@@ -94,6 +101,9 @@ class Settings:
                     os.getenv("READY_CUE_PATH", str(DEFAULT_READY_CUE_PATH)).strip()
                 )
             ),
+            post_reply_cue_path=_resolve_optional_path(
+                os.getenv("POST_REPLY_CUE_PATH", str(DEFAULT_READY_CUE_PATH)).strip()
+            ),
             playback_device=os.getenv("PLAYBACK_DEVICE", "auto").strip(),
             output_gain=float(os.getenv("OUTPUT_GAIN", "0.5")),
             turn_detection_type=os.getenv("TURN_DETECTION_TYPE", "none").strip(),
@@ -103,10 +113,11 @@ class Settings:
                 "TURN_DETECTION_INTERRUPT_RESPONSE", False
             ),
             recording_start_timeout=float(os.getenv("RECORDING_START_TIMEOUT", "8.0")),
-            recording_max_duration=float(os.getenv("RECORDING_MAX_DURATION", "8.0")),
-            recording_silence_duration=float(os.getenv("RECORDING_SILENCE_DURATION", "0.8")),
-            recording_rms_threshold=int(os.getenv("RECORDING_RMS_THRESHOLD", "60")),
-            recording_preroll_frames=int(os.getenv("RECORDING_PREROLL_FRAMES", "8")),
+            recording_max_duration=float(os.getenv("RECORDING_MAX_DURATION", "10.0")),
+            recording_silence_duration=float(os.getenv("RECORDING_SILENCE_DURATION", "1.2")),
+            recording_rms_threshold=int(os.getenv("RECORDING_RMS_THRESHOLD", "45")),
+            recording_preroll_frames=int(os.getenv("RECORDING_PREROLL_FRAMES", "12")),
+            response_max_output_tokens=int(os.getenv("RESPONSE_MAX_OUTPUT_TOKENS", "500")),
         )
 
     @property
@@ -129,6 +140,12 @@ def _resolve_path(raw_path: str) -> Path:
         return latest_matching[-1].resolve()
 
     return resolved
+
+
+def _resolve_optional_path(raw_path: str) -> str:
+    if not raw_path:
+        return ""
+    return str(_resolve_path(raw_path))
 
 
 def configure_logging(level_name: str) -> None:

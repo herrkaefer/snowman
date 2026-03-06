@@ -25,7 +25,7 @@ from .events import (
     SessionStarted,
     TranscriptFinal,
 )
-from .realtime_client import RealtimeVoiceAgent
+from .realtime_client import RealtimeConnectionClosed, RealtimeVoiceAgent
 from .tools import ToolRegistry
 from .wake_word import WakeWordDetector
 
@@ -157,15 +157,26 @@ class SnowmanRealtimeAssistant:
             )
 
             connect_started_at = time.monotonic()
-            client.connect()
+            try:
+                client.connect()
+            except Exception as exc:
+                LOGGER.warning("Realtime connect failed: %s", exc)
+                return False
             LOGGER.info("Realtime session started with %d placeholder tools", len(self._tool_registry.tools))
             LOGGER.info("Realtime connect duration: %.2fs", time.monotonic() - connect_started_at)
 
-            for chunk in utterance:
-                client.send_audio(resampler.convert(chunk))
-            client.commit_input_audio()
-            response_requested_at = time.monotonic()
-            client.create_response()
+            try:
+                for chunk in utterance:
+                    if should_stop:
+                        LOGGER.info("Stopping audio upload because the Realtime session already closed")
+                        return False
+                    client.send_audio(resampler.convert(chunk))
+                client.commit_input_audio()
+                response_requested_at = time.monotonic()
+                client.create_response()
+            except RealtimeConnectionClosed as exc:
+                LOGGER.warning("Realtime session closed while sending user audio: %s", exc)
+                return False
 
             interrupted = self._play_response_until_done_or_interrupt(
                 client=client,
@@ -182,6 +193,8 @@ class SnowmanRealtimeAssistant:
                     "Response playback duration: %.2fs",
                     response_done_at - first_response_audio_at,
                 )
+            if response_complete:
+                self._play_post_reply_cue(player)
             return interrupted
         finally:
             try:
@@ -192,6 +205,15 @@ class SnowmanRealtimeAssistant:
             client.close()
             player.close()
             LOGGER.info("Realtime session finished in %.2fs", time.monotonic() - session_started_at)
+
+    def _play_post_reply_cue(self, player: RawAplayPlayer) -> None:
+        cue_path = self._settings.post_reply_cue_path
+        if not cue_path or not Path(cue_path).exists():
+            return
+        try:
+            player.play_wav_file(cue_path, blocking=True)
+        except Exception:
+            LOGGER.exception("Failed to play post-reply cue")
 
     def _record_utterance(self, microphone: MicrophoneStream) -> list[bytes]:
         LOGGER.info("Recording one utterance after wake word")
