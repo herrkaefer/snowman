@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import audioop
+import json
 import logging
+import threading
 import time
 from collections import deque
 from collections.abc import Callable
@@ -28,6 +30,7 @@ from .events import (
     SessionClosed,
     SessionError,
     SessionStarted,
+    ToolCallRequested,
     TranscriptFinal,
 )
 from .realtime_client import RealtimeConnectionClosed, RealtimeVoiceAgent
@@ -50,8 +53,17 @@ END_PHRASES = {
     "that's all",
     "thats all",
     "all done",
+    "thanks",
+    "thank you",
+    "thankyou",
     "再见",
     "再見",
+    "谢谢",
+    "謝謝",
+    "多谢",
+    "多謝",
+    "谢了",
+    "謝了",
     "拜拜",
     "掰掰",
     "先这样",
@@ -71,8 +83,16 @@ NORMALIZED_END_PHRASES = {
     "endconversation",
     "thatsall",
     "alldone",
+    "thanks",
+    "thankyou",
     "再见",
     "再見",
+    "谢谢",
+    "謝謝",
+    "多谢",
+    "多謝",
+    "谢了",
+    "謝了",
     "拜拜",
     "掰掰",
     "先这样",
@@ -113,12 +133,62 @@ class TurnRuntimeState:
     ignored_response_ids: set[str] = field(default_factory=set)
 
 
+class ToolWaitLoop:
+    def __init__(
+        self,
+        *,
+        path: str,
+        delay_seconds: float,
+        gain: float,
+        sample_rate: int,
+        playback_device: str | None,
+    ) -> None:
+        self._path = path
+        self._delay_seconds = max(0.0, delay_seconds)
+        self._gain = gain
+        self._stop_event = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._player = RawAplayPlayer(
+            sample_rate=sample_rate,
+            playback_device=playback_device,
+            output_gain=1.0,
+        )
+
+    def start(self) -> None:
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        self._player.interrupt()
+        if self._thread is not None:
+            self._thread.join(timeout=1.0)
+        self._player.close()
+
+    def _run(self) -> None:
+        if self._stop_event.wait(self._delay_seconds):
+            return
+        LOGGER.info("Starting web_search wait cue loop")
+        while not self._stop_event.is_set():
+            try:
+                self._player.play_wav_file(
+                    self._path,
+                    blocking=True,
+                    gain=self._gain,
+                )
+            except Exception:
+                if not self._stop_event.is_set():
+                    LOGGER.exception("Failed to play web_search wait cue")
+                return
+        LOGGER.info("Stopped web_search wait cue loop")
+
+
 class SnowmanRealtimeAssistant:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._wake_detector = WakeWordDetector(settings)
         self._status_led = SessionStatusLed()
-        self._tool_registry = ToolRegistry()
+        self._tool_registry = ToolRegistry(settings)
 
     def run(self) -> None:
         LOGGER.info("Snowman Realtime ready")
@@ -224,6 +294,58 @@ class SnowmanRealtimeAssistant:
             self._status_led.processing()
             return
         self._status_led.off()
+
+    def _create_tool_wait_loop(self, tool_name: str) -> ToolWaitLoop | None:
+        if tool_name != "web_search":
+            return None
+        if not self._settings.web_search_wait_cue_enabled:
+            return None
+        cue_path = self._settings.web_search_wait_cue_path
+        if not cue_path or not Path(cue_path).exists():
+            return None
+        return ToolWaitLoop(
+            path=cue_path,
+            delay_seconds=self._settings.web_search_wait_cue_delay_seconds,
+            gain=self._settings.web_search_wait_cue_gain,
+            sample_rate=self._settings.realtime_sample_rate,
+            playback_device=resolve_playback_device(self._settings.playback_device),
+        )
+
+    def _handle_tool_call(
+        self,
+        *,
+        client: RealtimeVoiceAgent | None,
+        event: ToolCallRequested,
+        on_client_missing: Callable[[], None],
+    ) -> None:
+        if client is None:
+            LOGGER.error("Tool call arrived before Realtime client was ready")
+            on_client_missing()
+            return
+
+        wait_loop = self._create_tool_wait_loop(event.name)
+        if wait_loop is not None:
+            wait_loop.start()
+
+        tool_output: str
+        try:
+            tool_output = self._tool_registry.execute(
+                event.name,
+                event.arguments_json,
+            )
+            LOGGER.info("Tool completed: %s", event.name)
+        except Exception as exc:
+            LOGGER.exception("Tool execution failed: %s", event.name)
+            tool_output = json.dumps({"error": str(exc)}, ensure_ascii=False)
+        finally:
+            if wait_loop is not None:
+                wait_loop.stop()
+
+        client.submit_tool_output(
+            call_id=event.call_id,
+            output_json=tool_output,
+        )
+        client.create_response()
 
     def _is_end_transcript(self, transcript: str) -> bool:
         normalized = "".join(ch for ch in transcript.strip().lower() if ch.isalnum())
@@ -354,6 +476,16 @@ class SnowmanRealtimeAssistant:
                 LOGGER.info("Realtime session established: %s", event.session_id)
                 return
 
+            if isinstance(event, ToolCallRequested):
+                self._handle_tool_call(
+                    client=client,
+                    event=event,
+                    on_client_missing=lambda: setattr(state, "should_stop", True)
+                    if state is not None
+                    else None,
+                )
+                return
+
             if isinstance(event, TranscriptFinal):
                 transcript = event.text.strip()
                 LOGGER.info("Final transcript: %s", transcript)
@@ -441,7 +573,7 @@ class SnowmanRealtimeAssistant:
                         )
                         return
                     LOGGER.info(
-                        "Realtime session started with %d placeholder tools",
+                        "Realtime session started with %d tools",
                         len(self._tool_registry.tools),
                     )
                     LOGGER.info(
@@ -559,6 +691,10 @@ class SnowmanRealtimeAssistant:
         first_response_audio_at: float | None = None
         response_done_at: float | None = None
 
+        def _set_should_stop() -> None:
+            nonlocal should_stop
+            should_stop = True
+
         def handle_event(event: object) -> None:
             nonlocal should_stop, response_started, response_complete, last_activity
             nonlocal first_response_audio_at, response_done_at
@@ -588,6 +724,14 @@ class SnowmanRealtimeAssistant:
 
             if isinstance(event, SessionStarted):
                 LOGGER.info("Realtime session established: %s", event.session_id)
+                return
+
+            if isinstance(event, ToolCallRequested):
+                self._handle_tool_call(
+                    client=client,
+                    event=event,
+                    on_client_missing=lambda: _set_should_stop(),
+                )
                 return
 
             if isinstance(event, TranscriptFinal):
@@ -645,7 +789,7 @@ class SnowmanRealtimeAssistant:
                 return False
             client, response_requested_at = connect_result
             should_stop = False
-            LOGGER.info("Realtime session started with %d placeholder tools", len(self._tool_registry.tools))
+            LOGGER.info("Realtime session started with %d tools", len(self._tool_registry.tools))
             LOGGER.info("Realtime connect duration: %.2fs", time.monotonic() - connect_started_at)
 
             self._status_led.processing()
@@ -707,7 +851,11 @@ class SnowmanRealtimeAssistant:
         max_attempts = max(1, self._settings.realtime_connect_retries + 1)
 
         for attempt in range(1, max_attempts + 1):
-            client = RealtimeVoiceAgent(self._settings, event_handler)
+            client = RealtimeVoiceAgent(
+                self._settings,
+                event_handler,
+                tools=self._tool_registry.tools,
+            )
             try:
                 client.connect()
                 return client

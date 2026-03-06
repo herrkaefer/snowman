@@ -13,6 +13,7 @@ DEFAULT_WAKE_WORD_PATH = BASE_DIR / "Snowman_en_raspberry-pi_v4_0_0.ppn"
 DEFAULT_READY_CUE_PATH = BASE_DIR / "ready_cue.wav"
 DEFAULT_FAILURE_CUE_PATH = BASE_DIR / "wake_chime.wav"
 DEFAULT_SESSION_END_CUE_PATH = BASE_DIR / "end_cue.wav"
+DEFAULT_WEB_SEARCH_WAIT_CUE_PATH = BASE_DIR / "soft_piano_loop.wav"
 DEFAULT_SYSTEM_PROMPT = (
     "You are Snowman, a concise bilingual voice assistant for Raspberry Pi. "
     "Your name is Snowman. If asked your name, identity, or who you are, answer Snowman directly. "
@@ -26,6 +27,7 @@ DEFAULT_SYSTEM_PROMPT = (
     "Keep spoken answers brief and complete. "
     "Prefer a direct answer over explanation unless the user explicitly asks for more detail. "
     "If the user is clearly ending the conversation, reply with one very short goodbye only. "
+    "Use available tools for current local time, recent news, weather, prices, and other current information instead of guessing. "
     "Do not start with filler like 'okay', 'sure', or '当然'. "
     "Do not list multiple examples, options, or extra background unless asked. "
     "For translation requests, give just the translation unless the user asks for explanation. "
@@ -67,6 +69,10 @@ class Settings:
     post_reply_cue_path: str
     failure_cue_path: str
     session_end_cue_path: str
+    web_search_wait_cue_enabled: bool
+    web_search_wait_cue_path: str
+    web_search_wait_cue_delay_seconds: float
+    web_search_wait_cue_gain: float
     playback_device: str
     output_gain: float
     cue_output_gain: float
@@ -158,6 +164,17 @@ class Settings:
             session_end_cue_path=_resolve_optional_path(
                 os.getenv("SESSION_END_CUE_PATH", str(DEFAULT_SESSION_END_CUE_PATH)).strip()
             ),
+            web_search_wait_cue_enabled=_get_bool("WEB_SEARCH_WAIT_CUE_ENABLED", True),
+            web_search_wait_cue_path=_resolve_optional_path(
+                os.getenv(
+                    "WEB_SEARCH_WAIT_CUE_PATH",
+                    str(DEFAULT_WEB_SEARCH_WAIT_CUE_PATH),
+                ).strip()
+            ),
+            web_search_wait_cue_delay_seconds=float(
+                os.getenv("WEB_SEARCH_WAIT_CUE_DELAY_SECONDS", "0.5")
+            ),
+            web_search_wait_cue_gain=float(os.getenv("WEB_SEARCH_WAIT_CUE_GAIN", "0.20")),
             playback_device=os.getenv("PLAYBACK_DEVICE", "auto").strip(),
             output_gain=float(os.getenv("OUTPUT_GAIN", "0.5")),
             cue_output_gain=float(os.getenv("CUE_OUTPUT_GAIN", "0.22")),

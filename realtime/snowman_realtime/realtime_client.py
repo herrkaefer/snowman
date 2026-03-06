@@ -19,9 +19,11 @@ from .events import (
     SessionClosed,
     SessionError,
     SessionStarted,
+    ToolCallRequested,
     TranscriptFinal,
     TranscriptPartial,
 )
+from .tools import ToolDefinition
 
 
 LOGGER = logging.getLogger(__name__)
@@ -33,9 +35,15 @@ class RealtimeConnectionClosed(RuntimeError):
 
 
 class RealtimeVoiceAgent:
-    def __init__(self, settings: Settings, event_handler: EventHandler) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        event_handler: EventHandler,
+        tools: list[ToolDefinition] | None = None,
+    ) -> None:
         self._settings = settings
         self._event_handler = event_handler
+        self._tools = tools or []
         self._socket: websocket.WebSocket | None = None
         self._receiver_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
@@ -97,6 +105,15 @@ class RealtimeVoiceAgent:
                             "voice": self._settings.openai_voice,
                         },
                     },
+                    "tools": [
+                        {
+                            "type": "function",
+                            "name": tool.name,
+                            "description": tool.description,
+                            "parameters": tool.parameters,
+                        }
+                        for tool in self._tools
+                    ],
                 },
             }
         )
@@ -149,6 +166,7 @@ class RealtimeVoiceAgent:
                         "Do not say things like 'I can see', 'it looks like', or similar. "
                         "If the audio is unclear, incomplete, nonspeech, or you are not confident what the user said, briefly say that you did not catch it and ask them to repeat. "
                         "Do not guess or invent meaning from unclear audio. "
+                        "Use tools for current local time, recent news, weather, prices, and other current information instead of guessing. "
                         "Reply in one short sentence by default, and use two short sentences only when needed for clarity. "
                         "Keep the answer brief and complete. "
                         "Prefer a direct answer over explanation. "
@@ -159,6 +177,19 @@ class RealtimeVoiceAgent:
                         "Reply in the same language as the clearly understood user utterance; if the utterance is unclear, use English."
                     ),
                     "max_output_tokens": self._settings.response_max_output_tokens,
+                },
+            }
+        )
+
+    def submit_tool_output(self, *, call_id: str, output_json: str) -> None:
+        LOGGER.info("Submitting tool output for call_id=%s", call_id)
+        self._send(
+            {
+                "type": "conversation.item.create",
+                "item": {
+                    "type": "function_call_output",
+                    "call_id": call_id,
+                    "output": output_json,
                 },
             }
         )
@@ -265,8 +296,14 @@ class RealtimeVoiceAgent:
                 self._event_handler(ResponseTextDelta(text=delta, response_id=response_id))
             return
 
+        if message_type == "response.done":
+            self._handle_response_done(message)
+            text = self._consume_response_text(response_id)
+            if text:
+                self._event_handler(ResponseTextDone(text=text, response_id=response_id))
+            return
+
         if message_type in {
-            "response.done",
             "response.audio_transcript.done",
             "response.output_audio_transcript.done",
         }:
@@ -330,6 +367,33 @@ class RealtimeVoiceAgent:
     def _drop_response_text(self, response_id: str | None) -> None:
         response_key = self._response_key(response_id)
         self._response_text_parts.pop(response_key, None)
+
+    def _handle_response_done(self, message: dict[str, object]) -> None:
+        response = message.get("response")
+        if not isinstance(response, dict):
+            return
+        output = response.get("output")
+        if not isinstance(output, list):
+            return
+        for item in output:
+            if not isinstance(item, dict):
+                continue
+            if item.get("type") != "function_call":
+                continue
+            call_id = item.get("call_id")
+            name = item.get("name")
+            arguments = item.get("arguments", "{}")
+            if not isinstance(call_id, str) or not isinstance(name, str):
+                continue
+            if not isinstance(arguments, str):
+                arguments = json.dumps(arguments)
+            self._event_handler(
+                ToolCallRequested(
+                    call_id=call_id,
+                    name=name,
+                    arguments_json=arguments,
+                )
+            )
 
     def _recv_until_session_created(self) -> None:
         message = self._recv_bootstrap_message(

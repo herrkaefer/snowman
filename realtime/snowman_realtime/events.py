@@ -54,6 +54,13 @@ class ResponsePlaybackDone:
 
 
 @dataclass(frozen=True)
+class ToolCallRequested:
+    call_id: str
+    name: str
+    arguments_json: str
+
+
+@dataclass(frozen=True)
 class SessionError:
     message: str
 
