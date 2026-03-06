@@ -40,18 +40,12 @@ class RealtimeVoiceAgent:
         self._receiver_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         self._connection_closed_event = threading.Event()
-        self._session_created_event = threading.Event()
-        self._session_error_event = threading.Event()
-        self._last_error_message: str | None = None
         self._response_text_parts: list[str] = []
 
     def connect(self) -> None:
         LOGGER.info("Connecting to Realtime: %s", self._settings.realtime_ws_url)
         self._stop_event.clear()
         self._connection_closed_event.clear()
-        self._session_created_event.clear()
-        self._session_error_event.clear()
-        self._last_error_message = None
         turn_detection: dict[str, object] | None
         if self._settings.turn_detection_type.lower() in {"", "none", "off", "manual"}:
             turn_detection = None
@@ -69,16 +63,10 @@ class RealtimeVoiceAgent:
         self._socket = websocket.create_connection(
             self._settings.realtime_ws_url,
             header=headers,
-            timeout=15,
+            timeout=self._settings.realtime_connect_timeout_seconds,
             enable_multithread=True,
         )
-        self._receiver_thread = threading.Thread(target=self._recv_loop, daemon=True)
-        self._receiver_thread.start()
-        self._wait_for_event(
-            self._session_created_event,
-            "session.created",
-            timeout_seconds=2.0,
-        )
+        self._recv_until_session_created()
         self._send(
             {
                 "type": "session.update",
@@ -106,7 +94,13 @@ class RealtimeVoiceAgent:
                 },
             }
         )
-        self._wait_for_post_update_state(timeout_seconds=0.75)
+        self._observe_post_update_state(
+            timeout_seconds=self._settings.realtime_post_update_grace_seconds
+        )
+        assert self._socket is not None
+        self._socket.settimeout(None)
+        self._receiver_thread = threading.Thread(target=self._recv_loop, daemon=True)
+        self._receiver_thread.start()
         LOGGER.info("Realtime socket connected")
 
     def send_audio(self, audio_bytes: bytes) -> None:
@@ -185,6 +179,8 @@ class RealtimeVoiceAgent:
         while not self._stop_event.is_set():
             try:
                 raw_message = self._socket.recv()
+            except websocket.WebSocketTimeoutException:
+                continue
             except websocket.WebSocketConnectionClosedException:
                 self._connection_closed_event.set()
                 self._event_handler(SessionClosed(reason="socket_closed"))
@@ -214,7 +210,6 @@ class RealtimeVoiceAgent:
             if isinstance(session, dict):
                 raw_session_id = session.get("id")
                 session_id = str(raw_session_id) if raw_session_id else None
-            self._session_created_event.set()
             self._event_handler(SessionStarted(session_id=session_id))
             return
 
@@ -277,35 +272,66 @@ class RealtimeVoiceAgent:
                 error_message = str(error.get("message", "unknown realtime error"))
             else:
                 error_message = str(error)
-            self._last_error_message = error_message
-            self._session_error_event.set()
             self._event_handler(SessionError(message=error_message))
 
-    def _wait_for_event(
-        self,
-        event: threading.Event,
-        event_name: str,
-        timeout_seconds: float,
-    ) -> None:
-        deadline = time.monotonic() + timeout_seconds
-        while time.monotonic() < deadline:
-            if event.wait(timeout=0.05):
-                return
-            if self._connection_closed_event.is_set():
-                raise RealtimeConnectionClosed(
-                    f"Realtime socket closed before {event_name}"
-                )
-        LOGGER.warning("Timed out waiting for %s", event_name)
+    def _recv_until_session_created(self) -> None:
+        message = self._recv_bootstrap_message(
+            deadline=time.monotonic() + self._settings.realtime_session_created_timeout_seconds
+        )
+        message_type = str(message.get("type", ""))
+        if message_type == "session.created":
+            self._handle_message(message)
+            return
+        raise RuntimeError(f"Expected session.created, got {message_type or 'empty message'}")
 
-    def _wait_for_post_update_state(self, timeout_seconds: float) -> None:
+    def _observe_post_update_state(self, timeout_seconds: float) -> None:
         deadline = time.monotonic() + timeout_seconds
         while time.monotonic() < deadline:
-            if self._session_error_event.wait(timeout=0.05):
-                raise RuntimeError(
-                    self._last_error_message or "Realtime session.update failed"
-                )
-            if self._connection_closed_event.is_set():
-                raise RealtimeConnectionClosed(
-                    "Realtime socket closed shortly after session.update"
-                )
+            try:
+                message = self._recv_bootstrap_message(deadline=deadline)
+            except TimeoutError:
+                return
+
+            message_type = str(message.get("type", ""))
+            if message_type == "session.updated":
+                return
+            if message_type == "error":
+                error = message.get("error") or {}
+                if isinstance(error, dict):
+                    error_message = str(error.get("message", "unknown realtime error"))
+                else:
+                    error_message = str(error)
+                raise RuntimeError(error_message)
+            if message_type == "session.created":
+                continue
+            LOGGER.debug("Ignoring bootstrap Realtime message during post-update: %s", message_type)
         LOGGER.debug("No session.updated received after session.update; continuing")
+
+    def _recv_bootstrap_message(self, deadline: float) -> dict[str, object]:
+        assert self._socket is not None
+        while time.monotonic() < deadline:
+            remaining = max(0.05, deadline - time.monotonic())
+            self._socket.settimeout(min(0.25, remaining))
+            try:
+                raw_message = self._socket.recv()
+            except websocket.WebSocketTimeoutException as exc:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("Timed out waiting for bootstrap message") from exc
+                continue
+            except websocket.WebSocketConnectionClosedException as exc:
+                self._connection_closed_event.set()
+                raise RealtimeConnectionClosed("Realtime socket closed during bootstrap") from exc
+            except Exception as exc:
+                self._connection_closed_event.set()
+                raise RuntimeError(str(exc)) from exc
+
+            if not raw_message:
+                continue
+
+            try:
+                return json.loads(raw_message)
+            except json.JSONDecodeError:
+                LOGGER.debug("Skipping non-JSON bootstrap Realtime message: %r", raw_message)
+                continue
+
+        raise TimeoutError("Timed out waiting for bootstrap message")

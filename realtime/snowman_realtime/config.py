@@ -56,6 +56,15 @@ class Settings:
     failure_cue_path: str
     playback_device: str
     output_gain: float
+    input_ns_enabled: bool
+    input_agc_enabled: bool
+    input_ns_noise_floor_margin: float
+    input_ns_min_rms: int
+    input_ns_attenuation: float
+    input_agc_target_rms: int
+    input_agc_max_gain: float
+    input_agc_attack: float
+    input_agc_release: float
     turn_detection_type: str
     turn_detection_eagerness: str
     turn_detection_create_response: bool
@@ -65,9 +74,20 @@ class Settings:
     recording_silence_duration: float
     recording_rms_threshold: int
     recording_preroll_frames: int
+    auto_trigger_enabled: bool
+    auto_trigger_interval_seconds: float
+    auto_trigger_max_sessions: int
+    auto_trigger_use_synthetic_audio: bool
+    auto_trigger_synthetic_audio_ms: int
+    auto_trigger_synthetic_frequency_hz: float
+    auto_trigger_synthetic_amplitude: int
     response_max_output_tokens: int
+    realtime_connect_timeout_seconds: float
+    realtime_session_created_timeout_seconds: float
+    realtime_post_update_grace_seconds: float
     realtime_connect_retries: int
     realtime_retry_backoff_seconds: float
+    realtime_retry_backoff_max_seconds: float
 
     @classmethod
     def load(cls) -> "Settings":
@@ -116,6 +136,17 @@ class Settings:
             ),
             playback_device=os.getenv("PLAYBACK_DEVICE", "auto").strip(),
             output_gain=float(os.getenv("OUTPUT_GAIN", "0.5")),
+            input_ns_enabled=_get_bool("INPUT_NS_ENABLED", False),
+            input_agc_enabled=_get_bool("INPUT_AGC_ENABLED", False),
+            input_ns_noise_floor_margin=float(
+                os.getenv("INPUT_NS_NOISE_FLOOR_MARGIN", "1.8")
+            ),
+            input_ns_min_rms=int(os.getenv("INPUT_NS_MIN_RMS", "25")),
+            input_ns_attenuation=float(os.getenv("INPUT_NS_ATTENUATION", "0.35")),
+            input_agc_target_rms=int(os.getenv("INPUT_AGC_TARGET_RMS", "1100")),
+            input_agc_max_gain=float(os.getenv("INPUT_AGC_MAX_GAIN", "4.0")),
+            input_agc_attack=float(os.getenv("INPUT_AGC_ATTACK", "0.35")),
+            input_agc_release=float(os.getenv("INPUT_AGC_RELEASE", "0.08")),
             turn_detection_type=os.getenv("TURN_DETECTION_TYPE", "none").strip(),
             turn_detection_eagerness=os.getenv("TURN_DETECTION_EAGERNESS", "low").strip(),
             turn_detection_create_response=_get_bool("TURN_DETECTION_CREATE_RESPONSE", True),
@@ -127,10 +158,39 @@ class Settings:
             recording_silence_duration=float(os.getenv("RECORDING_SILENCE_DURATION", "1.2")),
             recording_rms_threshold=int(os.getenv("RECORDING_RMS_THRESHOLD", "45")),
             recording_preroll_frames=int(os.getenv("RECORDING_PREROLL_FRAMES", "12")),
+            auto_trigger_enabled=_get_bool("AUTO_TRIGGER_ENABLED", False),
+            auto_trigger_interval_seconds=float(
+                os.getenv("AUTO_TRIGGER_INTERVAL_SECONDS", "0.0")
+            ),
+            auto_trigger_max_sessions=int(os.getenv("AUTO_TRIGGER_MAX_SESSIONS", "0")),
+            auto_trigger_use_synthetic_audio=_get_bool(
+                "AUTO_TRIGGER_USE_SYNTHETIC_AUDIO", False
+            ),
+            auto_trigger_synthetic_audio_ms=int(
+                os.getenv("AUTO_TRIGGER_SYNTHETIC_AUDIO_MS", "2500")
+            ),
+            auto_trigger_synthetic_frequency_hz=float(
+                os.getenv("AUTO_TRIGGER_SYNTHETIC_FREQUENCY_HZ", "220.0")
+            ),
+            auto_trigger_synthetic_amplitude=int(
+                os.getenv("AUTO_TRIGGER_SYNTHETIC_AMPLITUDE", "700")
+            ),
             response_max_output_tokens=int(os.getenv("RESPONSE_MAX_OUTPUT_TOKENS", "500")),
-            realtime_connect_retries=int(os.getenv("REALTIME_CONNECT_RETRIES", "1")),
+            realtime_connect_timeout_seconds=float(
+                os.getenv("REALTIME_CONNECT_TIMEOUT_SECONDS", "20.0")
+            ),
+            realtime_session_created_timeout_seconds=float(
+                os.getenv("REALTIME_SESSION_CREATED_TIMEOUT_SECONDS", "3.0")
+            ),
+            realtime_post_update_grace_seconds=float(
+                os.getenv("REALTIME_POST_UPDATE_GRACE_SECONDS", "1.0")
+            ),
+            realtime_connect_retries=int(os.getenv("REALTIME_CONNECT_RETRIES", "2")),
             realtime_retry_backoff_seconds=float(
                 os.getenv("REALTIME_RETRY_BACKOFF_SECONDS", "0.75")
+            ),
+            realtime_retry_backoff_max_seconds=float(
+                os.getenv("REALTIME_RETRY_BACKOFF_MAX_SECONDS", "3.0")
             ),
         )
 

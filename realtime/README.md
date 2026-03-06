@@ -45,6 +45,49 @@ cp .env.example .env
 python main.py
 ```
 
+To bypass the wake word and repeatedly trigger turns automatically for debugging, set:
+
+```bash
+AUTO_TRIGGER_ENABLED=true
+AUTO_TRIGGER_INTERVAL_SECONDS=0.0
+AUTO_TRIGGER_MAX_SESSIONS=0
+```
+
+With that mode enabled, the app enters each turn directly and records the next utterance without waiting for `Snowman`.
+
+To make that mode fully automated for connection testing, also enable synthetic utterances:
+
+```bash
+AUTO_TRIGGER_USE_SYNTHETIC_AUDIO=true
+AUTO_TRIGGER_SYNTHETIC_AUDIO_MS=2500
+```
+
+## Probe Realtime Connectivity
+
+Use the probe script to isolate Realtime connection reliability from the microphone pipeline:
+
+```bash
+python probe_realtime_connect.py --attempts 20
+```
+
+To test the next stage as well, including synthetic audio upload and response creation:
+
+```bash
+python probe_realtime_connect.py --attempts 20 --with-audio
+```
+
+To approximate the current app's upload style more closely, use chunked upload:
+
+```bash
+python probe_realtime_connect.py --attempts 20 --with-audio --audio-ms 2500 --upload-mode chunked-burst
+```
+
+To compare against a paced upload variant:
+
+```bash
+python probe_realtime_connect.py --attempts 20 --with-audio --audio-ms 2500 --upload-mode chunked-paced
+```
+
 ## Raspberry Pi Notes
 
 - The default playback path uses `aplay` with raw PCM.
@@ -57,7 +100,9 @@ python main.py
 - The default mode uses manual turn submission to Realtime instead of continuous server VAD.
 - During reply playback, the device only listens for the wake word; saying it again interrupts the current reply and starts a new turn.
 - Model reply playback is software-attenuated with `OUTPUT_GAIN` to reduce speaker feedback on Raspberry Pi.
-- Realtime connection/setup is retried once by default before the app gives up on the current turn.
+- Optional local input cleanup can be enabled with `INPUT_NS_ENABLED` and `INPUT_AGC_ENABLED`.
+- The current `NS/AGC` path is lightweight local preprocessing designed to be safe on Raspberry Pi and easy to disable if it hurts recognition.
+- Realtime connection/setup now uses configurable timeouts and exponential retry backoff, with three total attempts by default.
 
 ## Service
 

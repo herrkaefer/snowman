@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import audioop
 import logging
+import math
 from pathlib import Path
 import re
 import struct
@@ -37,6 +38,96 @@ class PCMResampler:
             self._state,
         )
         return converted
+
+
+def generate_sine_pcm(
+    sample_rate: int,
+    duration_ms: int,
+    amplitude: int = 700,
+    frequency_hz: float = 220.0,
+) -> bytes:
+    frame_count = max(1, int(sample_rate * duration_ms / 1000))
+    samples = []
+    for index in range(frame_count):
+        sample = int(amplitude * math.sin(2.0 * math.pi * frequency_hz * index / sample_rate))
+        samples.append(sample)
+    return struct.pack("<%dh" % len(samples), *samples)
+
+
+@dataclass
+class InputAudioProcessor:
+    noise_suppression_enabled: bool = False
+    agc_enabled: bool = False
+    noise_floor_margin: float = 1.8
+    noise_suppression_min_rms: int = 25
+    noise_suppression_attenuation: float = 0.35
+    agc_target_rms: int = 1100
+    agc_max_gain: float = 4.0
+    agc_attack: float = 0.35
+    agc_release: float = 0.08
+    sample_width: int = 2
+
+    def __post_init__(self) -> None:
+        self._noise_floor_rms = 0.0
+        self._current_gain = 1.0
+
+    def reset(self) -> None:
+        self._noise_floor_rms = 0.0
+        self._current_gain = 1.0
+
+    def process(self, pcm_bytes: bytes) -> bytes:
+        if not pcm_bytes:
+            return pcm_bytes
+
+        rms = audioop.rms(pcm_bytes, self.sample_width)
+        self._update_noise_floor(rms)
+
+        processed = pcm_bytes
+        if self.noise_suppression_enabled:
+            processed = self._apply_noise_suppression(processed, rms)
+
+        if self.agc_enabled:
+            processed = self._apply_agc(processed)
+
+        return processed
+
+    def _update_noise_floor(self, rms: int) -> None:
+        if rms <= 0:
+            rms = 1
+        if self._noise_floor_rms <= 0:
+            self._noise_floor_rms = float(rms)
+            return
+
+        alpha = 0.05 if rms <= self._noise_floor_rms * self.noise_floor_margin else 0.005
+        self._noise_floor_rms = (
+            (1.0 - alpha) * self._noise_floor_rms + alpha * float(rms)
+        )
+
+    def _apply_noise_suppression(self, pcm_bytes: bytes, rms: int) -> bytes:
+        threshold = max(
+            self.noise_suppression_min_rms,
+            int(self._noise_floor_rms * self.noise_floor_margin),
+        )
+        if rms >= threshold:
+            return pcm_bytes
+        return audioop.mul(pcm_bytes, self.sample_width, self.noise_suppression_attenuation)
+
+    def _apply_agc(self, pcm_bytes: bytes) -> bytes:
+        rms = audioop.rms(pcm_bytes, self.sample_width)
+        if rms <= 0:
+            target_gain = self.agc_max_gain
+        else:
+            target_gain = min(self.agc_target_rms / rms, self.agc_max_gain)
+
+        if target_gain > self._current_gain:
+            step = self.agc_attack
+        else:
+            step = self.agc_release
+        self._current_gain += (target_gain - self._current_gain) * step
+
+        if abs(self._current_gain - 1.0) < 0.02:
+            return pcm_bytes
+        return audioop.mul(pcm_bytes, self.sample_width, self._current_gain)
 
 
 def resolve_input_device_index(configured_index: int) -> int:
@@ -88,9 +179,15 @@ def resolve_playback_device(configured_device: str) -> str | None:
 
 
 class MicrophoneStream:
-    def __init__(self, device_index: int, frame_length: int) -> None:
+    def __init__(
+        self,
+        device_index: int,
+        frame_length: int,
+        processor: InputAudioProcessor | None = None,
+    ) -> None:
         self._device_index = device_index
         self._frame_length = frame_length
+        self._processor = processor
         self._recorder: PvRecorder | None = None
 
     def start(self) -> None:
@@ -101,13 +198,18 @@ class MicrophoneStream:
             frame_length=self._frame_length,
         )
         self._recorder.start()
+        if self._processor is not None:
+            self._processor.reset()
         LOGGER.info("Microphone started on device: %s", self._recorder.selected_device)
 
     def read_frame_bytes(self) -> bytes:
         if self._recorder is None:
             raise RuntimeError("MicrophoneStream is not started")
         pcm = self._recorder.read()
-        return struct.pack("<%dh" % len(pcm), *pcm)
+        pcm_bytes = struct.pack("<%dh" % len(pcm), *pcm)
+        if self._processor is None:
+            return pcm_bytes
+        return self._processor.process(pcm_bytes)
 
     def stop(self) -> None:
         if self._recorder is None:

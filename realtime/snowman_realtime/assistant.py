@@ -8,9 +8,11 @@ from collections.abc import Callable
 from pathlib import Path
 
 from .audio import (
+    InputAudioProcessor,
     MicrophoneStream,
     PCMResampler,
     RawAplayPlayer,
+    generate_sine_pcm,
     resolve_input_device_index,
     resolve_playback_device,
 )
@@ -52,6 +54,9 @@ class SnowmanRealtimeAssistant:
     def run(self) -> None:
         LOGGER.info("Snowman Realtime ready")
         try:
+            if self._settings.auto_trigger_enabled:
+                self._run_auto_trigger_loop()
+                return
             while True:
                 wake_event = self._wake_detector.wait_for_wake()
                 if wake_event is None:
@@ -61,6 +66,29 @@ class SnowmanRealtimeAssistant:
                     LOGGER.info("Wake-word interrupt requested a new turn")
         finally:
             self._wake_detector.close()
+
+    def _run_auto_trigger_loop(self) -> None:
+        LOGGER.info(
+            "Auto trigger mode enabled: interval=%.2fs max_sessions=%d",
+            self._settings.auto_trigger_interval_seconds,
+            self._settings.auto_trigger_max_sessions,
+        )
+        session_count = 0
+        while True:
+            if (
+                self._settings.auto_trigger_max_sessions > 0
+                and session_count >= self._settings.auto_trigger_max_sessions
+            ):
+                LOGGER.info("Auto trigger session limit reached")
+                return
+
+            session_count += 1
+            LOGGER.info("Auto trigger session %d starting", session_count)
+            interrupted = self._run_session()
+            if interrupted:
+                LOGGER.info("Wake-word interrupt requested a new auto-triggered turn")
+            if self._settings.auto_trigger_interval_seconds > 0:
+                time.sleep(self._settings.auto_trigger_interval_seconds)
 
     def _run_session(self) -> bool:
         session_started_at = time.monotonic()
@@ -72,6 +100,22 @@ class SnowmanRealtimeAssistant:
         microphone = MicrophoneStream(
             device_index=resolve_input_device_index(self._settings.audio_device_index),
             frame_length=self._settings.input_frame_length,
+            processor=InputAudioProcessor(
+                noise_suppression_enabled=self._settings.input_ns_enabled,
+                agc_enabled=self._settings.input_agc_enabled,
+                noise_floor_margin=self._settings.input_ns_noise_floor_margin,
+                noise_suppression_min_rms=self._settings.input_ns_min_rms,
+                noise_suppression_attenuation=self._settings.input_ns_attenuation,
+                agc_target_rms=self._settings.input_agc_target_rms,
+                agc_max_gain=self._settings.input_agc_max_gain,
+                agc_attack=self._settings.input_agc_attack,
+                agc_release=self._settings.input_agc_release,
+            ),
+        )
+        LOGGER.info(
+            "Input cleanup: ns=%s agc=%s",
+            self._settings.input_ns_enabled,
+            self._settings.input_agc_enabled,
         )
         resampler = PCMResampler(
             source_rate=self._settings.input_sample_rate,
@@ -142,13 +186,11 @@ class SnowmanRealtimeAssistant:
                 except Exception:
                     LOGGER.exception("Failed to play ready cue")
 
-            microphone.start()
             record_started_at = time.monotonic()
-            utterance = self._record_utterance(microphone)
+            utterance = self._capture_utterance(microphone)
             if not utterance:
-                LOGGER.info("No utterance captured after wake word")
+                LOGGER.info("No utterance captured after trigger")
                 return False
-            microphone.stop()
             record_finished_at = time.monotonic()
             LOGGER.info(
                 "Recorded utterance: frames=%d duration=%.2fs",
@@ -218,19 +260,41 @@ class SnowmanRealtimeAssistant:
                 client.create_response()
                 return client, response_requested_at
             except (Exception, RealtimeConnectionClosed) as exc:
+                failure_kind = self._classify_realtime_attempt_error(exc)
                 LOGGER.warning(
-                    "Realtime request attempt %d/%d failed: %s",
+                    "Realtime request attempt %d/%d failed (%s): %s",
                     attempt,
                     max_attempts,
+                    failure_kind,
                     exc,
                 )
                 client.close()
                 if attempt >= max_attempts:
                     break
-                time.sleep(self._settings.realtime_retry_backoff_seconds)
+                backoff_seconds = min(
+                    self._settings.realtime_retry_backoff_seconds * (2 ** (attempt - 1)),
+                    self._settings.realtime_retry_backoff_max_seconds,
+                )
+                LOGGER.info(
+                    "Retrying Realtime request in %.2fs",
+                    backoff_seconds,
+                )
+                time.sleep(backoff_seconds)
 
         LOGGER.error("Realtime request failed after %d attempts", max_attempts)
         return None
+
+    def _classify_realtime_attempt_error(self, exc: Exception) -> str:
+        message = str(exc).lower()
+        if "timed out" in message or "timeout" in message:
+            return "timeout"
+        if "session.update" in message:
+            return "post_update"
+        if "session.created" in message:
+            return "session_created"
+        if "socket is closed" in message or "socket closed" in message:
+            return "socket_closed"
+        return exc.__class__.__name__
 
     def _play_post_reply_cue(self, player: RawAplayPlayer) -> None:
         cue_path = self._settings.post_reply_cue_path
@@ -251,7 +315,7 @@ class SnowmanRealtimeAssistant:
             LOGGER.exception("Failed to play failure cue")
 
     def _record_utterance(self, microphone: MicrophoneStream) -> list[bytes]:
-        LOGGER.info("Recording one utterance after wake word")
+        LOGGER.info("Recording one utterance after trigger")
         frames: list[bytes] = []
         preroll_frames: deque[bytes] = deque(maxlen=self._settings.recording_preroll_frames)
         speech_started = False
@@ -291,6 +355,43 @@ class SnowmanRealtimeAssistant:
 
         LOGGER.info("Recording max duration reached (frames=%d)", len(frames))
         return frames
+
+    def _capture_utterance(self, microphone: MicrophoneStream) -> list[bytes]:
+        if (
+            self._settings.auto_trigger_enabled
+            and self._settings.auto_trigger_use_synthetic_audio
+        ):
+            LOGGER.info(
+                "Using synthetic auto-trigger utterance: duration_ms=%d freq=%.1f amplitude=%d",
+                self._settings.auto_trigger_synthetic_audio_ms,
+                self._settings.auto_trigger_synthetic_frequency_hz,
+                self._settings.auto_trigger_synthetic_amplitude,
+            )
+            return self._build_synthetic_utterance()
+
+        microphone.start()
+        try:
+            return self._record_utterance(microphone)
+        finally:
+            microphone.stop()
+
+    def _build_synthetic_utterance(self) -> list[bytes]:
+        pcm_bytes = generate_sine_pcm(
+            sample_rate=self._settings.input_sample_rate,
+            duration_ms=self._settings.auto_trigger_synthetic_audio_ms,
+            amplitude=self._settings.auto_trigger_synthetic_amplitude,
+            frequency_hz=self._settings.auto_trigger_synthetic_frequency_hz,
+        )
+        bytes_per_frame = self._settings.input_frame_length * 2
+        utterance = [
+            pcm_bytes[offset : offset + bytes_per_frame]
+            for offset in range(0, len(pcm_bytes), bytes_per_frame)
+        ]
+        if not utterance:
+            return []
+        if len(utterance[-1]) < bytes_per_frame:
+            utterance[-1] = utterance[-1] + (b"\x00" * (bytes_per_frame - len(utterance[-1])))
+        return utterance
 
     def _play_response_until_done_or_interrupt(
         self,
