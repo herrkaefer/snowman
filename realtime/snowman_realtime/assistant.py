@@ -160,13 +160,13 @@ class SnowmanRealtimeAssistant:
             connect_result = self._connect_and_request_response(
                 utterance=utterance,
                 resampler=resampler,
-                should_stop=lambda: should_stop,
                 event_handler=handle_event,
             )
             if connect_result is None:
                 self._play_failure_cue(player)
                 return False
             client, response_requested_at = connect_result
+            should_stop = False
             LOGGER.info("Realtime session started with %d placeholder tools", len(self._tool_registry.tools))
             LOGGER.info("Realtime connect duration: %.2fs", time.monotonic() - connect_started_at)
 
@@ -203,7 +203,6 @@ class SnowmanRealtimeAssistant:
         self,
         utterance: list[bytes],
         resampler: PCMResampler,
-        should_stop: Callable[[], bool],
         event_handler: Callable[[object], None],
     ) -> tuple[RealtimeVoiceAgent, float] | None:
         max_attempts = max(1, self._settings.realtime_connect_retries + 1)
@@ -213,10 +212,6 @@ class SnowmanRealtimeAssistant:
             try:
                 client.connect()
                 for chunk in utterance:
-                    if should_stop():
-                        LOGGER.info("Stopping audio upload because the Realtime session already closed")
-                        client.close()
-                        return None
                     client.send_audio(resampler.convert(chunk))
                 client.commit_input_audio()
                 response_requested_at = time.monotonic()

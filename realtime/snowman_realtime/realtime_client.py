@@ -4,6 +4,7 @@ import base64
 import json
 import logging
 import threading
+import time
 from collections.abc import Callable
 
 import websocket
@@ -38,10 +39,19 @@ class RealtimeVoiceAgent:
         self._socket: websocket.WebSocket | None = None
         self._receiver_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
+        self._connection_closed_event = threading.Event()
+        self._session_created_event = threading.Event()
+        self._session_error_event = threading.Event()
+        self._last_error_message: str | None = None
         self._response_text_parts: list[str] = []
 
     def connect(self) -> None:
         LOGGER.info("Connecting to Realtime: %s", self._settings.realtime_ws_url)
+        self._stop_event.clear()
+        self._connection_closed_event.clear()
+        self._session_created_event.clear()
+        self._session_error_event.clear()
+        self._last_error_message = None
         turn_detection: dict[str, object] | None
         if self._settings.turn_detection_type.lower() in {"", "none", "off", "manual"}:
             turn_detection = None
@@ -62,11 +72,20 @@ class RealtimeVoiceAgent:
             timeout=15,
             enable_multithread=True,
         )
+        self._receiver_thread = threading.Thread(target=self._recv_loop, daemon=True)
+        self._receiver_thread.start()
+        self._wait_for_event(
+            self._session_created_event,
+            "session.created",
+            timeout_seconds=2.0,
+        )
         self._send(
             {
                 "type": "session.update",
                 "session": {
                     "type": "realtime",
+                    "model": self._settings.openai_realtime_model,
+                    "output_modalities": ["audio"],
                     "instructions": self._settings.system_prompt,
                     "audio": {
                         "input": {
@@ -87,8 +106,7 @@ class RealtimeVoiceAgent:
                 },
             }
         )
-        self._receiver_thread = threading.Thread(target=self._recv_loop, daemon=True)
-        self._receiver_thread.start()
+        self._wait_for_post_update_state(timeout_seconds=0.75)
         LOGGER.info("Realtime socket connected")
 
     def send_audio(self, audio_bytes: bytes) -> None:
@@ -125,6 +143,9 @@ class RealtimeVoiceAgent:
                     "instructions": (
                         "Do not greet, welcome, or introduce yourself. "
                         "Answer only the user's most recent utterance. "
+                        "Your name is Snowman. If asked your name, identity, or who you are, answer Snowman directly. "
+                        "Never say that you do not have a name. "
+                        "Do not claim to see the user's surroundings, screen, or camera feed unless the user explicitly provides that context. "
                         "Reply in one short sentence by default, and use two short sentences only when needed for clarity. "
                         "Keep the answer brief and complete. "
                         "Prefer a direct answer over explanation. "
@@ -139,6 +160,7 @@ class RealtimeVoiceAgent:
 
     def close(self) -> None:
         self._stop_event.set()
+        self._connection_closed_event.set()
         LOGGER.info("Closing Realtime client")
         if self._socket is not None:
             try:
@@ -164,9 +186,11 @@ class RealtimeVoiceAgent:
             try:
                 raw_message = self._socket.recv()
             except websocket.WebSocketConnectionClosedException:
+                self._connection_closed_event.set()
                 self._event_handler(SessionClosed(reason="socket_closed"))
                 return
             except Exception as exc:
+                self._connection_closed_event.set()
                 self._event_handler(SessionError(message=str(exc)))
                 return
 
@@ -184,13 +208,17 @@ class RealtimeVoiceAgent:
     def _handle_message(self, message: dict[str, object]) -> None:
         message_type = str(message.get("type", ""))
 
-        if message_type in {"session.created", "session.updated"}:
+        if message_type == "session.created":
             session = message.get("session") or {}
             session_id = None
             if isinstance(session, dict):
                 raw_session_id = session.get("id")
                 session_id = str(raw_session_id) if raw_session_id else None
+            self._session_created_event.set()
             self._event_handler(SessionStarted(session_id=session_id))
+            return
+
+        if message_type == "session.updated":
             return
 
         if message_type in {"response.audio.delta", "response.output_audio.delta"}:
@@ -249,4 +277,35 @@ class RealtimeVoiceAgent:
                 error_message = str(error.get("message", "unknown realtime error"))
             else:
                 error_message = str(error)
+            self._last_error_message = error_message
+            self._session_error_event.set()
             self._event_handler(SessionError(message=error_message))
+
+    def _wait_for_event(
+        self,
+        event: threading.Event,
+        event_name: str,
+        timeout_seconds: float,
+    ) -> None:
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            if event.wait(timeout=0.05):
+                return
+            if self._connection_closed_event.is_set():
+                raise RealtimeConnectionClosed(
+                    f"Realtime socket closed before {event_name}"
+                )
+        LOGGER.warning("Timed out waiting for %s", event_name)
+
+    def _wait_for_post_update_state(self, timeout_seconds: float) -> None:
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            if self._session_error_event.wait(timeout=0.05):
+                raise RuntimeError(
+                    self._last_error_message or "Realtime session.update failed"
+                )
+            if self._connection_closed_event.is_set():
+                raise RealtimeConnectionClosed(
+                    "Realtime socket closed shortly after session.update"
+                )
+        LOGGER.debug("No session.updated received after session.update; continuing")
