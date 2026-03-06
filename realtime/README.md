@@ -39,6 +39,7 @@ cp .env.example .env
 - `PORCUPINE_ACCESS_KEY`
 - audio and wake-word settings if needed
 - `WAKE_WORD_SENSITIVITY` defaults to `0.65`; raise it carefully if wake-word interrupt misses during playback
+- `SYSTEM_PROMPT` is not required in `.env`; the default assistant prompt now lives in code and is augmented at runtime with the current local date/time and current-information tool rules
 
 ## Run
 
@@ -66,6 +67,24 @@ To make that mode fully automated for connection testing, also enable synthetic 
 AUTO_TRIGGER_USE_SYNTHETIC_AUDIO=true
 AUTO_TRIGGER_SYNTHETIC_AUDIO_MS=2500
 ```
+
+## Current Behavior
+
+- The app supports single-turn mode when `SESSION_WINDOW_ENABLED=false`.
+- The app supports short multi-turn session-window mode when `SESSION_WINDOW_ENABLED=true`.
+- In session-window mode, one wake word opens one Realtime session and keeps it alive across short follow-up turns.
+- The microphone is still locally gated per turn; it does not stay continuously open during reply playback.
+- During reply playback, the device only polls for the wake word, so saying it again interrupts the current reply and starts the next turn.
+- Each Realtime session and each response now receive dynamic prompt context with the current local date/time on the Raspberry Pi.
+- For current or changing facts such as officeholders, news, weather, prices, laws, schedules, and anything phrased as current/latest/today/now/recent, the assistant is instructed to call `web_search` before answering instead of relying on memory.
+- Ordinary date/time questions can usually be answered directly from the injected current timestamp; `local_time` remains available as a fallback for precise current-time checks in longer sessions.
+
+Common session-window settings:
+
+- `SESSION_WINDOW_ENABLED=false` keeps the original single-turn flow
+- `SESSION_FOLLOWUP_TIMEOUT=6.0` controls how long follow-up turns wait for speech
+- `SESSION_MAX_TURNS=0` means unlimited turns until timeout or end phrase
+- `POST_REPLY_CUE_PATH=ready_cue.wav` replays the ready cue after each completed reply by default
 
 ## Probe Realtime Connectivity
 
@@ -103,11 +122,13 @@ python probe_realtime_connect.py --attempts 20 --with-audio --audio-ms 2500 --up
 - A post-reply cue can be configured with `POST_REPLY_CUE_PATH`; by default it reuses `ready_cue.wav`.
 - A failure cue can be configured with `FAILURE_CUE_PATH`; by default it uses `wake_chime.wav`.
 - The default playback device is auto-detected and prefers `Google voiceHAT`.
+- The default prompt lives in `snowman_realtime/config.py`; use `.env` overrides only if you intentionally want a custom prompt.
 - The default mode uses manual turn submission to Realtime instead of continuous server VAD.
 - During reply playback, the device only listens for the wake word; saying it again interrupts the current reply and starts a new turn.
 - Model reply playback is software-attenuated with `OUTPUT_GAIN` to reduce speaker feedback on Raspberry Pi.
 - Optional local input cleanup can be enabled with `INPUT_NS_ENABLED` and `INPUT_AGC_ENABLED`.
 - The current `NS/AGC` path is lightweight local preprocessing designed to be safe on Raspberry Pi and easy to disable if it hurts recognition.
+- Direct Realtime tools currently include `web_search` for current information and `local_time` for exact current local time.
 - Realtime connection/setup now uses configurable timeouts and exponential retry backoff, with three total attempts by default.
 
 ## Current Hardware Config
