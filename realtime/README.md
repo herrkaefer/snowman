@@ -48,6 +48,8 @@ cp .env.example .env
 
 This wrapper kills any older `main.py` instance first, then starts exactly one foreground process.
 
+For routine use on Raspberry Pi, prefer the systemd service instead of manual `nohup`.
+
 To bypass the wake word and repeatedly trigger turns automatically for debugging, set:
 
 ```bash
@@ -132,5 +134,68 @@ Current known limitation on this hardware:
 
 ## Service
 
-An example systemd unit is included at `snowman-realtime.service`.
-It uses `start_realtime.sh` so service restarts also replace any older leftover instance.
+The Raspberry Pi deployment now uses:
+
+- `snowman-realtime.service`
+- `snowman-realtime-healthcheck.service`
+- `snowman-realtime-healthcheck.timer`
+
+The main service uses `start_realtime.sh`, so every restart also cleans up any older leftover instance before starting a new one.
+
+### Install On Raspberry Pi
+
+Copy these files to the Pi and install them as system services:
+
+```bash
+sudo install -m 644 snowman-realtime.service /etc/systemd/system/snowman-realtime.service
+sudo install -m 644 snowman-realtime-healthcheck.service /etc/systemd/system/snowman-realtime-healthcheck.service
+sudo install -m 644 snowman-realtime-healthcheck.timer /etc/systemd/system/snowman-realtime-healthcheck.timer
+sudo install -m 755 check_realtime_health.sh /home/snowman/voice-assistant-realtime/realtime/check_realtime_health.sh
+sudo systemctl daemon-reload
+sudo systemctl enable --now snowman-realtime.service
+sudo systemctl enable --now snowman-realtime-healthcheck.timer
+```
+
+### Daily Operations
+
+Use these commands on Raspberry Pi:
+
+```bash
+sudo systemctl start snowman-realtime
+sudo systemctl stop snowman-realtime
+sudo systemctl restart snowman-realtime
+sudo systemctl status snowman-realtime --no-pager
+tail -f ~/voice-assistant-realtime/realtime/realtime.log
+```
+
+To verify only one realtime instance is running:
+
+```bash
+pgrep -af "voice-assistant-realtime/realtime/main.py"
+```
+
+### Health Check
+
+The app now emits a periodic `Health heartbeat:` log line by default.
+
+The health-check timer runs every 2 minutes and restarts the main service if any of these happen:
+
+- the systemd service is not active
+- the process count is not exactly one
+- the latest heartbeat is older than 5 minutes
+
+Manual health-check commands:
+
+```bash
+sudo systemctl status snowman-realtime-healthcheck.timer --no-pager
+sudo systemctl start snowman-realtime-healthcheck.service
+journalctl -u snowman-realtime-healthcheck.service -n 20 --no-pager
+```
+
+### Testing Without Creating Multiple Instances
+
+For normal testing on Raspberry Pi:
+
+- use `sudo systemctl restart snowman-realtime`
+- do not start a separate `nohup ./start_realtime.sh`
+- if you need to play standalone audio samples, stop the service first and start it again after the sample playback

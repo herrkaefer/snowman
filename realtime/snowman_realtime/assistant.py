@@ -189,14 +189,21 @@ class SnowmanRealtimeAssistant:
         self._wake_detector = WakeWordDetector(settings)
         self._status_led = SessionStatusLed()
         self._tool_registry = ToolRegistry(settings)
+        self._health_state = "starting"
+        self._health_state_lock = threading.Lock()
+        self._health_stop_event = threading.Event()
+        self._health_thread: threading.Thread | None = None
 
     def run(self) -> None:
         LOGGER.info("Snowman Realtime ready")
+        self._start_health_heartbeat()
         try:
             if self._settings.auto_trigger_enabled:
+                self._set_health_state("auto_trigger_idle")
                 self._run_auto_trigger_loop()
                 return
             while True:
+                self._set_health_state("idle_waiting_for_wake")
                 wake_event = self._wake_detector.wait_for_wake()
                 if wake_event is None:
                     continue
@@ -204,6 +211,7 @@ class SnowmanRealtimeAssistant:
                 while self._run_session():
                     LOGGER.info("Wake-word interrupt requested a new turn")
         finally:
+            self._stop_health_heartbeat()
             self._status_led.close()
             self._wake_detector.close()
 
@@ -284,7 +292,30 @@ class SnowmanRealtimeAssistant:
         else:
             LOGGER.info("Session state: %s -> %s", current_state.value, next_state.value)
         self._apply_session_led_state(next_state)
+        self._set_health_state(next_state.value)
         return next_state
+
+    def _set_health_state(self, state: str) -> None:
+        with self._health_state_lock:
+            self._health_state = state
+
+    def _start_health_heartbeat(self) -> None:
+        if not self._settings.health_heartbeat_enabled:
+            return
+        self._health_thread = threading.Thread(target=self._health_heartbeat_loop, daemon=True)
+        self._health_thread.start()
+
+    def _stop_health_heartbeat(self) -> None:
+        self._health_stop_event.set()
+        if self._health_thread is not None:
+            self._health_thread.join(timeout=1.0)
+
+    def _health_heartbeat_loop(self) -> None:
+        interval = max(5.0, self._settings.health_heartbeat_interval_seconds)
+        while not self._health_stop_event.wait(interval):
+            with self._health_state_lock:
+                state = self._health_state
+            LOGGER.info("Health heartbeat: state=%s", state)
 
     def _apply_session_led_state(self, state: SessionWindowState) -> None:
         if state in {SessionWindowState.READY, SessionWindowState.RECORDING_TURN}:

@@ -102,6 +102,8 @@ class Settings:
     auto_trigger_synthetic_frequency_hz: float
     auto_trigger_synthetic_amplitude: int
     response_max_output_tokens: int
+    health_heartbeat_enabled: bool
+    health_heartbeat_interval_seconds: float
     realtime_connect_timeout_seconds: float
     realtime_session_created_timeout_seconds: float
     realtime_post_update_grace_seconds: float
@@ -218,6 +220,10 @@ class Settings:
                 os.getenv("AUTO_TRIGGER_SYNTHETIC_AMPLITUDE", "700")
             ),
             response_max_output_tokens=int(os.getenv("RESPONSE_MAX_OUTPUT_TOKENS", "500")),
+            health_heartbeat_enabled=_get_bool("HEALTH_HEARTBEAT_ENABLED", True),
+            health_heartbeat_interval_seconds=float(
+                os.getenv("HEALTH_HEARTBEAT_INTERVAL_SECONDS", "60.0")
+            ),
             realtime_connect_timeout_seconds=float(
                 os.getenv("REALTIME_CONNECT_TIMEOUT_SECONDS", "20.0")
             ),
