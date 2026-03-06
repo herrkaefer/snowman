@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_WAKE_WORD_PATH = BASE_DIR / "Snowman_en_raspberry-pi_v4_0_0.ppn"
 DEFAULT_READY_CUE_PATH = BASE_DIR / "ready_cue.wav"
+DEFAULT_FAILURE_CUE_PATH = BASE_DIR / "wake_chime.wav"
 DEFAULT_SYSTEM_PROMPT = (
     "You are Snowman, a concise bilingual voice assistant for Raspberry Pi. "
     "Reply in one short sentence by default, and use two short sentences only when needed for clarity. "
@@ -49,6 +50,7 @@ class Settings:
     system_prompt: str
     ready_cue_path: str
     post_reply_cue_path: str
+    failure_cue_path: str
     playback_device: str
     output_gain: float
     turn_detection_type: str
@@ -61,6 +63,8 @@ class Settings:
     recording_rms_threshold: int
     recording_preroll_frames: int
     response_max_output_tokens: int
+    realtime_connect_retries: int
+    realtime_retry_backoff_seconds: float
 
     @classmethod
     def load(cls) -> "Settings":
@@ -104,6 +108,9 @@ class Settings:
             post_reply_cue_path=_resolve_optional_path(
                 os.getenv("POST_REPLY_CUE_PATH", str(DEFAULT_READY_CUE_PATH)).strip()
             ),
+            failure_cue_path=_resolve_optional_path(
+                os.getenv("FAILURE_CUE_PATH", str(DEFAULT_FAILURE_CUE_PATH)).strip()
+            ),
             playback_device=os.getenv("PLAYBACK_DEVICE", "auto").strip(),
             output_gain=float(os.getenv("OUTPUT_GAIN", "0.5")),
             turn_detection_type=os.getenv("TURN_DETECTION_TYPE", "none").strip(),
@@ -118,6 +125,10 @@ class Settings:
             recording_rms_threshold=int(os.getenv("RECORDING_RMS_THRESHOLD", "45")),
             recording_preroll_frames=int(os.getenv("RECORDING_PREROLL_FRAMES", "12")),
             response_max_output_tokens=int(os.getenv("RESPONSE_MAX_OUTPUT_TOKENS", "500")),
+            realtime_connect_retries=int(os.getenv("REALTIME_CONNECT_RETRIES", "1")),
+            realtime_retry_backoff_seconds=float(
+                os.getenv("REALTIME_RETRY_BACKOFF_SECONDS", "0.75")
+            ),
         )
 
     @property
@@ -145,7 +156,10 @@ def _resolve_path(raw_path: str) -> Path:
 def _resolve_optional_path(raw_path: str) -> str:
     if not raw_path:
         return ""
-    return str(_resolve_path(raw_path))
+    path = Path(raw_path)
+    if path.is_absolute():
+        return str(path)
+    return str((BASE_DIR / path).resolve())
 
 
 def configure_logging(level_name: str) -> None:

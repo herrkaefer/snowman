@@ -133,7 +133,7 @@ class SnowmanRealtimeAssistant:
                 LOGGER.info("Realtime session closed: %s", event.reason)
                 should_stop = True
 
-        client = RealtimeVoiceAgent(self._settings, handle_event)
+        client: RealtimeVoiceAgent | None = None
 
         try:
             if Path(self._settings.ready_cue_path).exists():
@@ -157,26 +157,18 @@ class SnowmanRealtimeAssistant:
             )
 
             connect_started_at = time.monotonic()
-            try:
-                client.connect()
-            except Exception as exc:
-                LOGGER.warning("Realtime connect failed: %s", exc)
+            connect_result = self._connect_and_request_response(
+                utterance=utterance,
+                resampler=resampler,
+                should_stop=lambda: should_stop,
+                event_handler=handle_event,
+            )
+            if connect_result is None:
+                self._play_failure_cue(player)
                 return False
+            client, response_requested_at = connect_result
             LOGGER.info("Realtime session started with %d placeholder tools", len(self._tool_registry.tools))
             LOGGER.info("Realtime connect duration: %.2fs", time.monotonic() - connect_started_at)
-
-            try:
-                for chunk in utterance:
-                    if should_stop:
-                        LOGGER.info("Stopping audio upload because the Realtime session already closed")
-                        return False
-                    client.send_audio(resampler.convert(chunk))
-                client.commit_input_audio()
-                response_requested_at = time.monotonic()
-                client.create_response()
-            except RealtimeConnectionClosed as exc:
-                LOGGER.warning("Realtime session closed while sending user audio: %s", exc)
-                return False
 
             interrupted = self._play_response_until_done_or_interrupt(
                 client=client,
@@ -202,9 +194,48 @@ class SnowmanRealtimeAssistant:
             except Exception:
                 LOGGER.debug("Microphone stop failed", exc_info=True)
             self._wake_detector.stop()
-            client.close()
+            if client is not None:
+                client.close()
             player.close()
             LOGGER.info("Realtime session finished in %.2fs", time.monotonic() - session_started_at)
+
+    def _connect_and_request_response(
+        self,
+        utterance: list[bytes],
+        resampler: PCMResampler,
+        should_stop: Callable[[], bool],
+        event_handler: Callable[[object], None],
+    ) -> tuple[RealtimeVoiceAgent, float] | None:
+        max_attempts = max(1, self._settings.realtime_connect_retries + 1)
+
+        for attempt in range(1, max_attempts + 1):
+            client = RealtimeVoiceAgent(self._settings, event_handler)
+            try:
+                client.connect()
+                for chunk in utterance:
+                    if should_stop():
+                        LOGGER.info("Stopping audio upload because the Realtime session already closed")
+                        client.close()
+                        return None
+                    client.send_audio(resampler.convert(chunk))
+                client.commit_input_audio()
+                response_requested_at = time.monotonic()
+                client.create_response()
+                return client, response_requested_at
+            except (Exception, RealtimeConnectionClosed) as exc:
+                LOGGER.warning(
+                    "Realtime request attempt %d/%d failed: %s",
+                    attempt,
+                    max_attempts,
+                    exc,
+                )
+                client.close()
+                if attempt >= max_attempts:
+                    break
+                time.sleep(self._settings.realtime_retry_backoff_seconds)
+
+        LOGGER.error("Realtime request failed after %d attempts", max_attempts)
+        return None
 
     def _play_post_reply_cue(self, player: RawAplayPlayer) -> None:
         cue_path = self._settings.post_reply_cue_path
@@ -214,6 +245,15 @@ class SnowmanRealtimeAssistant:
             player.play_wav_file(cue_path, blocking=True)
         except Exception:
             LOGGER.exception("Failed to play post-reply cue")
+
+    def _play_failure_cue(self, player: RawAplayPlayer) -> None:
+        cue_path = self._settings.failure_cue_path
+        if not cue_path or not Path(cue_path).exists():
+            return
+        try:
+            player.play_wav_file(cue_path, blocking=True)
+        except Exception:
+            LOGGER.exception("Failed to play failure cue")
 
     def _record_utterance(self, microphone: MicrophoneStream) -> list[bytes]:
         LOGGER.info("Recording one utterance after wake word")

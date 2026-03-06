@@ -52,10 +52,12 @@ python main.py
 - The default custom wake word path points to `Snowman_en_raspberry-pi_v4_0_0.ppn` in this directory.
 - The default ready cue uses `ready_cue.wav` in this directory.
 - A post-reply cue can be configured with `POST_REPLY_CUE_PATH`; by default it reuses `ready_cue.wav`.
+- A failure cue can be configured with `FAILURE_CUE_PATH`; by default it uses `wake_chime.wav`.
 - The default playback device is auto-detected and prefers `Google voiceHAT`.
 - The default mode uses manual turn submission to Realtime instead of continuous server VAD.
 - During reply playback, the device only listens for the wake word; saying it again interrupts the current reply and starts a new turn.
 - Model reply playback is software-attenuated with `OUTPUT_GAIN` to reduce speaker feedback on Raspberry Pi.
+- Realtime connection/setup is retried once by default before the app gives up on the current turn.
 
 ## Service
 
