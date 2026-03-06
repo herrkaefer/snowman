@@ -9,6 +9,7 @@ User=snowman
 Group=audio
 WorkingDirectory=/home/snowman/voice-assistant-realtime/realtime
 EnvironmentFile=/home/snowman/voice-assistant-realtime/realtime/.env
+ExecCondition=/home/snowman/voice-assistant-realtime/realtime/within_runtime_window.sh
 ExecStart=/home/snowman/voice-assistant-realtime/realtime/start_realtime.sh
 Restart=always
 RestartSec=5

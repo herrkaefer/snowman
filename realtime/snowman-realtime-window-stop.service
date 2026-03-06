@@ -1,0 +1,6 @@
+[Unit]
+Description=Stop Snowman Realtime Outside Daily Runtime Window
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl stop snowman-realtime-healthcheck.timer snowman-realtime-healthcheck.service snowman-realtime.service

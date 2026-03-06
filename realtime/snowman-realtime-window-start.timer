@@ -1,0 +1,10 @@
+[Unit]
+Description=Start Snowman Realtime At 07:30 Every Day
+
+[Timer]
+OnCalendar=*-*-* 07:30:00
+Persistent=true
+Unit=snowman-realtime-window-start.service
+
+[Install]
+WantedBy=timers.target

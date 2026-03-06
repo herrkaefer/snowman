@@ -1,0 +1,10 @@
+[Unit]
+Description=Stop Snowman Realtime At 21:30 Every Day
+
+[Timer]
+OnCalendar=*-*-* 21:30:00
+Persistent=true
+Unit=snowman-realtime-window-stop.service
+
+[Install]
+WantedBy=timers.target

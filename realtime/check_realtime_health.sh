@@ -5,6 +5,12 @@ SERVICE_NAME="${SERVICE_NAME:-snowman-realtime.service}"
 LOG_PATH="${LOG_PATH:-/home/snowman/voice-assistant-realtime/realtime/realtime.log}"
 MAX_HEARTBEAT_AGE_SECONDS="${MAX_HEARTBEAT_AGE_SECONDS:-300}"
 MAIN_PATTERN="${MAIN_PATTERN:-/home/snowman/voice-assistant-realtime/realtime/venv/bin/python3 -u /home/snowman/voice-assistant-realtime/realtime/main.py}"
+WINDOW_CHECK_SCRIPT="${WINDOW_CHECK_SCRIPT:-/home/snowman/voice-assistant-realtime/realtime/within_runtime_window.sh}"
+
+if ! "${WINDOW_CHECK_SCRIPT}"; then
+  echo "Healthcheck: outside runtime window; skipping"
+  exit 0
+fi
 
 if ! systemctl is-active --quiet "${SERVICE_NAME}"; then
   echo "Healthcheck: ${SERVICE_NAME} inactive; restarting"

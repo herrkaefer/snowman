@@ -1,0 +1,6 @@
+[Unit]
+Description=Start Snowman Realtime During Daily Runtime Window
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl start snowman-realtime.service snowman-realtime-healthcheck.timer

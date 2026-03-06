@@ -139,6 +139,10 @@ The Raspberry Pi deployment now uses:
 - `snowman-realtime.service`
 - `snowman-realtime-healthcheck.service`
 - `snowman-realtime-healthcheck.timer`
+- `snowman-realtime-window-start.service`
+- `snowman-realtime-window-start.timer`
+- `snowman-realtime-window-stop.service`
+- `snowman-realtime-window-stop.timer`
 
 The main service uses `start_realtime.sh`, so every restart also cleans up any older leftover instance before starting a new one.
 
@@ -151,9 +155,53 @@ sudo install -m 644 snowman-realtime.service /etc/systemd/system/snowman-realtim
 sudo install -m 644 snowman-realtime-healthcheck.service /etc/systemd/system/snowman-realtime-healthcheck.service
 sudo install -m 644 snowman-realtime-healthcheck.timer /etc/systemd/system/snowman-realtime-healthcheck.timer
 sudo install -m 755 check_realtime_health.sh /home/snowman/voice-assistant-realtime/realtime/check_realtime_health.sh
+sudo install -m 755 within_runtime_window.sh /home/snowman/voice-assistant-realtime/realtime/within_runtime_window.sh
 sudo systemctl daemon-reload
 sudo systemctl enable --now snowman-realtime.service
 sudo systemctl enable --now snowman-realtime-healthcheck.timer
+```
+
+### Schedule A Daily Runtime Window
+
+If you want the assistant to run only during a fixed local-time window, for example `07:30` to `21:30`, install these extra units:
+
+```bash
+sudo install -m 644 snowman-realtime-window-start.service /etc/systemd/system/snowman-realtime-window-start.service
+sudo install -m 644 snowman-realtime-window-start.timer /etc/systemd/system/snowman-realtime-window-start.timer
+sudo install -m 644 snowman-realtime-window-stop.service /etc/systemd/system/snowman-realtime-window-stop.service
+sudo install -m 644 snowman-realtime-window-stop.timer /etc/systemd/system/snowman-realtime-window-stop.timer
+sudo install -m 755 within_runtime_window.sh /home/snowman/voice-assistant-realtime/realtime/within_runtime_window.sh
+sudo systemctl daemon-reload
+```
+
+Then switch away from always-on boot startup:
+
+```bash
+sudo systemctl disable --now snowman-realtime.service
+sudo systemctl disable --now snowman-realtime-healthcheck.timer
+sudo systemctl enable --now snowman-realtime-window-start.timer
+sudo systemctl enable --now snowman-realtime-window-stop.timer
+```
+
+How it works:
+
+- `07:30`: start `snowman-realtime.service` and `snowman-realtime-healthcheck.timer`
+- `21:30`: stop the health-check timer first, then stop the main realtime service
+- outside that window, `within_runtime_window.sh` reads the installed start/stop timers and blocks both service restarts and health-check restarts
+
+The timers use Raspberry Pi local time and set `Persistent=true`, so if the Pi reboots and missed one of the scheduled times, systemd will catch up on the next boot.
+
+To change the schedule, edit these timer files and reinstall them. They are the single source of truth for the allowed runtime window:
+
+- `snowman-realtime-window-start.timer`: `OnCalendar=*-*-* 07:30:00`
+- `snowman-realtime-window-stop.timer`: `OnCalendar=*-*-* 21:30:00`
+
+Useful checks:
+
+```bash
+sudo systemctl list-timers --all | grep 'snowman-realtime-window'
+sudo systemctl status snowman-realtime-window-start.timer --no-pager
+sudo systemctl status snowman-realtime-window-stop.timer --no-pager
 ```
 
 ### Daily Operations
