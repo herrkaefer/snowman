@@ -8,6 +8,7 @@ import re
 import struct
 import subprocess
 import threading
+import time
 import wave
 from dataclasses import dataclass
 
@@ -232,6 +233,8 @@ class RawAplayPlayer:
         self._output_gain = output_gain
         self._process: subprocess.Popen[bytes] | None = None
         self._lock = threading.Lock()
+        self._playback_available_at = 0.0
+        self._max_buffer_seconds = 0.2
 
     def _spawn(self) -> None:
         if self._process is not None and self._process.poll() is None:
@@ -268,6 +271,14 @@ class RawAplayPlayer:
             scaled_bytes = audio_bytes
             if self._output_gain != 1.0:
                 scaled_bytes = audioop.mul(audio_bytes, 2, self._output_gain)
+            chunk_duration_seconds = len(scaled_bytes) / (2 * self._sample_rate)
+            now = time.monotonic()
+            if self._playback_available_at <= 0:
+                self._playback_available_at = now
+            backlog_seconds = self._playback_available_at - now
+            if backlog_seconds > self._max_buffer_seconds:
+                time.sleep(backlog_seconds - self._max_buffer_seconds)
+                now = time.monotonic()
             try:
                 self._process.stdin.write(scaled_bytes)
                 self._process.stdin.flush()
@@ -278,6 +289,7 @@ class RawAplayPlayer:
                 assert self._process is not None and self._process.stdin is not None
                 self._process.stdin.write(scaled_bytes)
                 self._process.stdin.flush()
+            self._playback_available_at = max(now, self._playback_available_at) + chunk_duration_seconds
 
     def interrupt(self) -> None:
         with self._lock:
@@ -351,3 +363,4 @@ class RawAplayPlayer:
             self._process.kill()
             self._process.wait(timeout=1.0)
         self._process = None
+        self._playback_available_at = 0.0

@@ -20,6 +20,7 @@ class WakeWordDetector:
         self._porcupine = pvporcupine.create(
             access_key=settings.porcupine_access_key,
             keyword_paths=[settings.custom_wake_keyword_path],
+            sensitivities=[settings.wake_word_sensitivity],
         )
         device_index = resolve_input_device_index(settings.audio_device_index)
         self._recorder = PvRecorder(
@@ -33,7 +34,11 @@ class WakeWordDetector:
             return
         self._recorder.start()
         self._started = True
-        LOGGER.info("Listening for wake word using device: %s", self._recorder.selected_device)
+        LOGGER.info(
+            "Listening for wake word using device: %s (sensitivity=%.2f)",
+            self._recorder.selected_device,
+            self._settings.wake_word_sensitivity,
+        )
 
     def stop(self) -> None:
         if not self._started:

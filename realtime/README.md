@@ -38,12 +38,15 @@ cp .env.example .env
 - `OPENAI_API_KEY`
 - `PORCUPINE_ACCESS_KEY`
 - audio and wake-word settings if needed
+- `WAKE_WORD_SENSITIVITY` defaults to `0.65`; raise it carefully if wake-word interrupt misses during playback
 
 ## Run
 
 ```bash
-python main.py
+./start_realtime.sh
 ```
+
+This wrapper kills any older `main.py` instance first, then starts exactly one foreground process.
 
 To bypass the wake word and repeatedly trigger turns automatically for debugging, set:
 
@@ -92,6 +95,7 @@ python probe_realtime_connect.py --attempts 20 --with-audio --audio-ms 2500 --up
 
 - The default playback path uses `aplay` with raw PCM.
 - Wake word detection still uses a local `.ppn` file.
+- Wake word sensitivity is controlled by `WAKE_WORD_SENSITIVITY` in the range `0.0` to `1.0`; higher values reduce misses but increase false triggers.
 - The default custom wake word path points to `Snowman_en_raspberry-pi_v4_0_0.ppn` in this directory.
 - The default ready cue uses `ready_cue.wav` in this directory.
 - A post-reply cue can be configured with `POST_REPLY_CUE_PATH`; by default it reuses `ready_cue.wav`.
@@ -107,3 +111,4 @@ python probe_realtime_connect.py --attempts 20 --with-audio --audio-ms 2500 --up
 ## Service
 
 An example systemd unit is included at `snowman-realtime.service`.
+It uses `start_realtime.sh` so service restarts also replace any older leftover instance.

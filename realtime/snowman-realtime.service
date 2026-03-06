@@ -9,7 +9,7 @@ User=snowman
 Group=audio
 WorkingDirectory=%h/voice-assistant-realtime/realtime
 EnvironmentFile=%h/voice-assistant-realtime/realtime/.env
-ExecStart=%h/voice-assistant-realtime/realtime/venv/bin/python3 %h/voice-assistant-realtime/realtime/main.py
+ExecStart=%h/voice-assistant-realtime/realtime/start_realtime.sh
 Restart=always
 RestartSec=5
 

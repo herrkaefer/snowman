@@ -12,6 +12,7 @@ BASE_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_WAKE_WORD_PATH = BASE_DIR / "Snowman_en_raspberry-pi_v4_0_0.ppn"
 DEFAULT_READY_CUE_PATH = BASE_DIR / "ready_cue.wav"
 DEFAULT_FAILURE_CUE_PATH = BASE_DIR / "wake_chime.wav"
+DEFAULT_SESSION_END_CUE_PATH = BASE_DIR / "end_cue.wav"
 DEFAULT_SYSTEM_PROMPT = (
     "You are Snowman, a concise bilingual voice assistant for Raspberry Pi. "
     "Your name is Snowman. If asked your name, identity, or who you are, answer Snowman directly. "
@@ -24,6 +25,7 @@ DEFAULT_SYSTEM_PROMPT = (
     "Reply in one short sentence by default, and use two short sentences only when needed for clarity. "
     "Keep spoken answers brief and complete. "
     "Prefer a direct answer over explanation unless the user explicitly asks for more detail. "
+    "If the user is clearly ending the conversation, reply with one very short goodbye only. "
     "Do not start with filler like 'okay', 'sure', or '当然'. "
     "Do not list multiple examples, options, or extra background unless asked. "
     "For translation requests, give just the translation unless the user asks for explanation. "
@@ -45,20 +47,26 @@ class Settings:
     openai_realtime_url: str
     openai_realtime_model: str
     openai_voice: str
+    input_transcription_model: str
     openai_beta_header: str
     porcupine_access_key: str
     custom_wake_keyword_path: str
+    wake_word_sensitivity: float
     audio_device_index: int
     input_frame_length: int
     input_sample_rate: int
     realtime_sample_rate: int
     session_idle_timeout: float
+    session_window_enabled: bool
+    session_followup_timeout: float
+    session_max_turns: int
     interruption_enabled: bool
     log_level: str
     system_prompt: str
     ready_cue_path: str
     post_reply_cue_path: str
     failure_cue_path: str
+    session_end_cue_path: str
     playback_device: str
     output_gain: float
     input_ns_enabled: bool
@@ -113,6 +121,9 @@ class Settings:
             ).strip(),
             openai_realtime_model=os.getenv("OPENAI_REALTIME_MODEL", "gpt-realtime").strip(),
             openai_voice=os.getenv("OPENAI_VOICE", "alloy").strip(),
+            input_transcription_model=os.getenv(
+                "INPUT_TRANSCRIPTION_MODEL", "gpt-4o-mini-transcribe"
+            ).strip(),
             openai_beta_header=os.getenv("OPENAI_BETA_HEADER", "realtime=v1").strip(),
             porcupine_access_key=porcupine_access_key,
             custom_wake_keyword_path=str(
@@ -120,11 +131,15 @@ class Settings:
                     os.getenv("CUSTOM_WAKE_KEYWORD_PATH", str(DEFAULT_WAKE_WORD_PATH)).strip()
                 )
             ),
+            wake_word_sensitivity=float(os.getenv("WAKE_WORD_SENSITIVITY", "0.65")),
             audio_device_index=int(os.getenv("AUDIO_DEVICE_INDEX", "-1")),
             input_frame_length=int(os.getenv("INPUT_FRAME_LENGTH", "512")),
             input_sample_rate=int(os.getenv("INPUT_SAMPLE_RATE", "16000")),
             realtime_sample_rate=int(os.getenv("REALTIME_SAMPLE_RATE", "24000")),
             session_idle_timeout=float(os.getenv("SESSION_IDLE_TIMEOUT", "20")),
+            session_window_enabled=_get_bool("SESSION_WINDOW_ENABLED", False),
+            session_followup_timeout=float(os.getenv("SESSION_FOLLOWUP_TIMEOUT", "6.0")),
+            session_max_turns=int(os.getenv("SESSION_MAX_TURNS", "0")),
             interruption_enabled=_get_bool("INTERRUPTION_ENABLED", True),
             log_level=os.getenv("LOG_LEVEL", "INFO").strip().upper(),
             system_prompt=os.getenv("SYSTEM_PROMPT", DEFAULT_SYSTEM_PROMPT).strip(),
@@ -138,6 +153,9 @@ class Settings:
             ),
             failure_cue_path=_resolve_optional_path(
                 os.getenv("FAILURE_CUE_PATH", str(DEFAULT_FAILURE_CUE_PATH)).strip()
+            ),
+            session_end_cue_path=_resolve_optional_path(
+                os.getenv("SESSION_END_CUE_PATH", str(DEFAULT_SESSION_END_CUE_PATH)).strip()
             ),
             playback_device=os.getenv("PLAYBACK_DEVICE", "auto").strip(),
             output_gain=float(os.getenv("OUTPUT_GAIN", "0.5")),

@@ -40,7 +40,7 @@ class RealtimeVoiceAgent:
         self._receiver_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         self._connection_closed_event = threading.Event()
-        self._response_text_parts: list[str] = []
+        self._response_text_parts: dict[str, list[str]] = {}
 
     def connect(self) -> None:
         LOGGER.info("Connecting to Realtime: %s", self._settings.realtime_ws_url)
@@ -55,6 +55,18 @@ class RealtimeVoiceAgent:
                 "eagerness": self._settings.turn_detection_eagerness,
                 "create_response": self._settings.turn_detection_create_response,
                 "interrupt_response": self._settings.turn_detection_interrupt_response,
+            }
+
+        input_audio: dict[str, object] = {
+            "format": {
+                "type": "audio/pcm",
+                "rate": self._settings.realtime_sample_rate,
+            },
+            "turn_detection": turn_detection,
+        }
+        if self._settings.input_transcription_model:
+            input_audio["transcription"] = {
+                "model": self._settings.input_transcription_model,
             }
 
         headers = [
@@ -76,13 +88,7 @@ class RealtimeVoiceAgent:
                     "output_modalities": ["audio"],
                     "instructions": self._settings.system_prompt,
                     "audio": {
-                        "input": {
-                            "format": {
-                                "type": "audio/pcm",
-                                "rate": self._settings.realtime_sample_rate,
-                            },
-                            "turn_detection": turn_detection,
-                        },
+                        "input": input_audio,
                         "output": {
                             "format": {
                                 "type": "audio/pcm",
@@ -116,9 +122,9 @@ class RealtimeVoiceAgent:
 
     def interrupt(self) -> None:
         try:
-            self._send({"type": "output_audio_buffer.clear"})
+            self._send({"type": "response.cancel"})
         except Exception:
-            LOGGER.debug("Failed to send output_audio_buffer.clear", exc_info=True)
+            LOGGER.debug("Failed to send response.cancel", exc_info=True)
 
     def clear_input_audio(self) -> None:
         self._send({"type": "input_audio_buffer.clear"})
@@ -128,7 +134,6 @@ class RealtimeVoiceAgent:
         self._send({"type": "input_audio_buffer.commit"})
 
     def create_response(self) -> None:
-        self._response_text_parts = []
         LOGGER.info("Creating Realtime response")
         self._send(
             {
@@ -147,6 +152,7 @@ class RealtimeVoiceAgent:
                         "Reply in one short sentence by default, and use two short sentences only when needed for clarity. "
                         "Keep the answer brief and complete. "
                         "Prefer a direct answer over explanation. "
+                        "If the user is clearly ending the conversation, reply with one very short goodbye only. "
                         "Do not start with filler like 'okay', 'sure', or '当然'. "
                         "Do not list multiple examples, options, or extra background unless the user asks for them. "
                         "For translation requests, give just the translation unless the user asks for explanation. "
@@ -208,6 +214,7 @@ class RealtimeVoiceAgent:
 
     def _handle_message(self, message: dict[str, object]) -> None:
         message_type = str(message.get("type", ""))
+        response_id = self._extract_response_id(message)
 
         if message_type == "session.created":
             session = message.get("session") or {}
@@ -225,16 +232,24 @@ class RealtimeVoiceAgent:
             delta = str(message.get("delta", ""))
             if delta:
                 self._event_handler(
-                    ResponseAudioChunk(audio_bytes=base64.b64decode(delta))
+                    ResponseAudioChunk(
+                        audio_bytes=base64.b64decode(delta),
+                        response_id=response_id,
+                    )
                 )
             return
 
         if message_type == "response.cancelled":
-            self._event_handler(ResponseInterrupted(reason=message_type))
+            self._drop_response_text(response_id)
+            self._event_handler(
+                ResponseInterrupted(reason=message_type, response_id=response_id)
+            )
             return
 
         if message_type in {"response.audio.done", "response.output_audio.done"}:
-            self._event_handler(ResponsePlaybackDone(reason=message_type))
+            self._event_handler(
+                ResponsePlaybackDone(reason=message_type, response_id=response_id)
+            )
             return
 
         if message_type in {
@@ -245,8 +260,9 @@ class RealtimeVoiceAgent:
         }:
             delta = str(message.get("delta", ""))
             if delta:
-                self._response_text_parts.append(delta)
-                self._event_handler(ResponseTextDelta(text=delta))
+                response_key = self._response_key(response_id)
+                self._response_text_parts.setdefault(response_key, []).append(delta)
+                self._event_handler(ResponseTextDelta(text=delta, response_id=response_id))
             return
 
         if message_type in {
@@ -254,14 +270,18 @@ class RealtimeVoiceAgent:
             "response.audio_transcript.done",
             "response.output_audio_transcript.done",
         }:
-            if self._response_text_parts:
-                self._event_handler(ResponseTextDone(text="".join(self._response_text_parts)))
+            text = self._consume_response_text(response_id)
+            if text:
+                self._event_handler(ResponseTextDone(text=text, response_id=response_id))
             return
 
         if message_type in {
+            "conversation.item.input_audio_transcription.delta",
             "conversation.item.input_audio_transcription.completed",
             "input_audio_buffer.transcription.completed",
         }:
+            if message_type.endswith(".delta"):
+                return
             transcript = str(message.get("transcript", ""))
             if transcript:
                 self._event_handler(TranscriptFinal(text=transcript))
@@ -278,6 +298,38 @@ class RealtimeVoiceAgent:
             else:
                 error_message = str(error)
             self._event_handler(SessionError(message=error_message))
+
+    def _extract_response_id(self, message: dict[str, object]) -> str | None:
+        raw_response_id = message.get("response_id")
+        if raw_response_id:
+            return str(raw_response_id)
+
+        response = message.get("response")
+        if isinstance(response, dict):
+            nested_response_id = response.get("id")
+            if nested_response_id:
+                return str(nested_response_id)
+
+        return None
+
+    def _response_key(self, response_id: str | None) -> str:
+        return response_id or "__default__"
+
+    def _consume_response_text(self, response_id: str | None) -> str:
+        response_key = self._response_key(response_id)
+        parts = self._response_text_parts.pop(response_key, None)
+        if parts:
+            return "".join(parts)
+
+        if response_id is None and len(self._response_text_parts) == 1:
+            _, only_parts = self._response_text_parts.popitem()
+            return "".join(only_parts)
+
+        return ""
+
+    def _drop_response_text(self, response_id: str | None) -> None:
+        response_key = self._response_key(response_id)
+        self._response_text_parts.pop(response_key, None)
 
     def _recv_until_session_created(self) -> None:
         message = self._recv_bootstrap_message(
