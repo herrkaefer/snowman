@@ -300,6 +300,22 @@ class RawAplayPlayer:
         with self._lock:
             self._shutdown_locked(force=False)
 
+    def finish_current_playback(
+        self,
+        *,
+        grace_seconds: float = 0.08,
+        max_wait_seconds: float = 0.45,
+    ) -> None:
+        with self._lock:
+            if self._process is None:
+                return
+            remaining_seconds = max(0.0, self._playback_available_at - time.monotonic())
+        wait_seconds = min(max_wait_seconds, remaining_seconds + grace_seconds)
+        if wait_seconds > 0:
+            time.sleep(wait_seconds)
+        with self._lock:
+            self._shutdown_locked(force=True)
+
     def close(self) -> None:
         with self._lock:
             self._shutdown_locked(force=False)

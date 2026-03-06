@@ -1088,7 +1088,7 @@ class SnowmanRealtimeAssistant:
                     return PlaybackResult.STOPPED
 
                 if response_complete:
-                    player.drain()
+                    player.finish_current_playback()
                     return PlaybackResult.COMPLETED
 
                 wake_event = self._wake_detector.poll_for_wake(timeout=0.15)
