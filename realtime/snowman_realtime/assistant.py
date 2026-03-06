@@ -5,6 +5,7 @@ import logging
 import time
 from collections import deque
 from collections.abc import Callable
+from pathlib import Path
 
 from .audio import (
     MicrophoneStream,
@@ -62,6 +63,7 @@ class SnowmanRealtimeAssistant:
             self._wake_detector.close()
 
     def _run_session(self) -> bool:
+        session_started_at = time.monotonic()
         player = RawAplayPlayer(
             sample_rate=self._settings.realtime_sample_rate,
             playback_device=resolve_playback_device(self._settings.playback_device),
@@ -80,20 +82,26 @@ class SnowmanRealtimeAssistant:
         response_started = False
         response_complete = False
         last_activity = time.monotonic()
+        first_response_audio_at: float | None = None
+        response_done_at: float | None = None
 
         def handle_event(event: object) -> None:
             nonlocal should_stop, response_started, response_complete, last_activity
+            nonlocal first_response_audio_at, response_done_at
             last_activity = time.monotonic()
 
             if isinstance(event, ResponseAudioChunk):
                 LOGGER.info("Received response audio chunk: %d bytes", len(event.audio_bytes))
                 response_started = True
+                if first_response_audio_at is None:
+                    first_response_audio_at = time.monotonic()
                 player.play(event.audio_bytes)
                 return
 
             if isinstance(event, ResponsePlaybackDone):
                 LOGGER.info("Response playback done: %s", event.reason)
                 response_complete = True
+                response_done_at = time.monotonic()
                 return
 
             if isinstance(event, ResponseTextDelta):
@@ -128,19 +136,35 @@ class SnowmanRealtimeAssistant:
         client = RealtimeVoiceAgent(self._settings, handle_event)
 
         try:
+            if Path(self._settings.ready_cue_path).exists():
+                try:
+                    player.play_wav_file(self._settings.ready_cue_path, blocking=True)
+                except Exception:
+                    LOGGER.exception("Failed to play ready cue")
+
             microphone.start()
+            record_started_at = time.monotonic()
             utterance = self._record_utterance(microphone)
             if not utterance:
                 LOGGER.info("No utterance captured after wake word")
                 return False
             microphone.stop()
+            record_finished_at = time.monotonic()
+            LOGGER.info(
+                "Recorded utterance: frames=%d duration=%.2fs",
+                len(utterance),
+                record_finished_at - record_started_at,
+            )
 
+            connect_started_at = time.monotonic()
             client.connect()
             LOGGER.info("Realtime session started with %d placeholder tools", len(self._tool_registry.tools))
+            LOGGER.info("Realtime connect duration: %.2fs", time.monotonic() - connect_started_at)
 
             for chunk in utterance:
                 client.send_audio(resampler.convert(chunk))
             client.commit_input_audio()
+            response_requested_at = time.monotonic()
             client.create_response()
 
             interrupted = self._play_response_until_done_or_interrupt(
@@ -148,6 +172,16 @@ class SnowmanRealtimeAssistant:
                 player=player,
                 response_state=lambda: (response_started, response_complete, should_stop, last_activity),
             )
+            if first_response_audio_at is not None:
+                LOGGER.info(
+                    "First response audio latency: %.2fs",
+                    first_response_audio_at - response_requested_at,
+                )
+            if response_done_at is not None and first_response_audio_at is not None:
+                LOGGER.info(
+                    "Response playback duration: %.2fs",
+                    response_done_at - first_response_audio_at,
+                )
             return interrupted
         finally:
             try:
@@ -157,7 +191,7 @@ class SnowmanRealtimeAssistant:
             self._wake_detector.stop()
             client.close()
             player.close()
-            LOGGER.info("Realtime session finished")
+            LOGGER.info("Realtime session finished in %.2fs", time.monotonic() - session_started_at)
 
     def _record_utterance(self, microphone: MicrophoneStream) -> list[bytes]:
         LOGGER.info("Recording one utterance after wake word")

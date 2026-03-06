@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_WAKE_WORD_PATH = BASE_DIR / "Snowman_en_raspberry-pi_v4_0_0.ppn"
+DEFAULT_READY_CUE_PATH = BASE_DIR / "ready_cue.wav"
 DEFAULT_SYSTEM_PROMPT = (
     "You are Snowman, a concise bilingual voice assistant for Raspberry Pi. "
     "Reply with exactly one short sentence unless the user explicitly asks for more detail. "
@@ -41,6 +42,7 @@ class Settings:
     interruption_enabled: bool
     log_level: str
     system_prompt: str
+    ready_cue_path: str
     playback_device: str
     output_gain: float
     turn_detection_type: str
@@ -87,6 +89,11 @@ class Settings:
             interruption_enabled=_get_bool("INTERRUPTION_ENABLED", True),
             log_level=os.getenv("LOG_LEVEL", "INFO").strip().upper(),
             system_prompt=os.getenv("SYSTEM_PROMPT", DEFAULT_SYSTEM_PROMPT).strip(),
+            ready_cue_path=str(
+                _resolve_path(
+                    os.getenv("READY_CUE_PATH", str(DEFAULT_READY_CUE_PATH)).strip()
+                )
+            ),
             playback_device=os.getenv("PLAYBACK_DEVICE", "auto").strip(),
             output_gain=float(os.getenv("OUTPUT_GAIN", "0.5")),
             turn_detection_type=os.getenv("TURN_DETECTION_TYPE", "none").strip(),

@@ -7,6 +7,7 @@ import re
 import struct
 import subprocess
 import threading
+import wave
 from dataclasses import dataclass
 
 from pvrecorder import PvRecorder
@@ -189,15 +190,48 @@ class RawAplayPlayer:
             self._shutdown_locked(force=False)
 
     def play_wav_file(self, path: str | Path, blocking: bool = True) -> None:
-        wav_path = str(path)
-        cmd = ["aplay", "-q"]
-        if self._playback_device:
-            cmd.extend(["-D", self._playback_device])
-        cmd.append(wav_path)
+        wav_path = Path(path)
+        LOGGER.info("Playing cue wav: %s (blocking=%s)", wav_path, blocking)
+        with wave.open(str(wav_path), "rb") as wav_file:
+            sample_rate = wav_file.getframerate()
+            sample_width = wav_file.getsampwidth()
+            channels = wav_file.getnchannels()
+            audio_bytes = wav_file.readframes(wav_file.getnframes())
+
+        if channels == 2:
+            audio_bytes = audioop.tomono(audio_bytes, sample_width, 0.5, 0.5)
+            channels = 1
+        elif channels != 1:
+            raise RuntimeError(f"Unsupported cue channel count: {channels}")
+
+        if sample_width != 2:
+            audio_bytes = audioop.lin2lin(audio_bytes, sample_width, 2)
+            sample_width = 2
+
+        if sample_rate != self._sample_rate:
+            audio_bytes, _ = audioop.ratecv(
+                audio_bytes,
+                sample_width,
+                channels,
+                sample_rate,
+                self._sample_rate,
+                None,
+            )
+
         if blocking:
-            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        else:
-            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            self.play(audio_bytes)
+            self.drain()
+            LOGGER.info("Cue playback finished: %s", wav_path)
+            return
+
+        threading.Thread(target=self._play_wav_async, args=(audio_bytes,), daemon=True).start()
+
+    def _play_wav_async(self, audio_bytes: bytes) -> None:
+        try:
+            self.play(audio_bytes)
+            self.drain()
+        except Exception:
+            LOGGER.exception("Failed to play async wav cue")
 
     def _shutdown_locked(self, force: bool) -> None:
         if self._process is None:

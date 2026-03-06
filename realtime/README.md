@@ -50,6 +50,7 @@ python main.py
 - The default playback path uses `aplay` with raw PCM.
 - Wake word detection still uses a local `.ppn` file.
 - The default custom wake word path points to `Snowman_en_raspberry-pi_v4_0_0.ppn` in this directory.
+- The default ready cue uses `ready_cue.wav` in this directory.
 - The default playback device is auto-detected and prefers `Google voiceHAT`.
 - The default mode uses manual turn submission to Realtime instead of continuous server VAD.
 - During reply playback, the device only listens for the wake word; saying it again interrupts the current reply and starts a new turn.

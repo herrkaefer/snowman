@@ -41,6 +41,7 @@ class RealtimeVoiceAgent:
         self._response_text_parts: list[str] = []
 
     def connect(self) -> None:
+        LOGGER.info("Connecting to Realtime: %s", self._settings.realtime_ws_url)
         turn_detection: dict[str, object] | None
         if self._settings.turn_detection_type.lower() in {"", "none", "off", "manual"}:
             turn_detection = None
@@ -88,6 +89,7 @@ class RealtimeVoiceAgent:
         )
         self._receiver_thread = threading.Thread(target=self._recv_loop, daemon=True)
         self._receiver_thread.start()
+        LOGGER.info("Realtime socket connected")
 
     def send_audio(self, audio_bytes: bytes) -> None:
         try:
@@ -110,10 +112,12 @@ class RealtimeVoiceAgent:
         self._send({"type": "input_audio_buffer.clear"})
 
     def commit_input_audio(self) -> None:
+        LOGGER.info("Committing input audio buffer")
         self._send({"type": "input_audio_buffer.commit"})
 
     def create_response(self) -> None:
         self._response_text_parts = []
+        LOGGER.info("Creating Realtime response")
         self._send(
             {
                 "type": "response.create",
@@ -129,6 +133,7 @@ class RealtimeVoiceAgent:
 
     def close(self) -> None:
         self._stop_event.set()
+        LOGGER.info("Closing Realtime client")
         if self._socket is not None:
             try:
                 self._socket.close()
