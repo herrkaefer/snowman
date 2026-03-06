@@ -108,6 +108,28 @@ python probe_realtime_connect.py --attempts 20 --with-audio --audio-ms 2500 --up
 - The current `NS/AGC` path is lightweight local preprocessing designed to be safe on Raspberry Pi and easy to disable if it hurts recognition.
 - Realtime connection/setup now uses configurable timeouts and exponential retry backoff, with three total attempts by default.
 
+## Current Hardware Config
+
+Current Raspberry Pi setup being tested:
+
+- Pi: `Raspberry Pi 5 Model B Rev 1.1`
+- Mic / speaker HAT: `Google voiceHAT SoundCard HiFi`
+- ALSA capture card: `snd_rpi_googlevoicehat_soundcar`
+- Input device index: `12`
+- Playback device: `plughw:2,0`
+- Wake word model: `Snowman_en_raspberry-pi_v4_0_0.ppn`
+- Wake word sensitivity: `0.75`
+- Voice: `shimmer`
+- Session window: `enabled`
+- Local input cleanup: `INPUT_NS_ENABLED=true`, `INPUT_AGC_ENABLED=true`
+- Current reply output gain: `0.13`
+
+Current known limitation on this hardware:
+
+- Wake-word interrupt during reply playback is running, but still misses reliably under speaker playback on this `voiceHAT` setup.
+- Lowering `OUTPUT_GAIN` reduces playback leakage into the microphone, but has not yet made wake-word barge-in reliable.
+- This points more to speaker-to-mic echo / acoustic coupling than to the session state machine itself.
+
 ## Service
 
 An example systemd unit is included at `snowman-realtime.service`.

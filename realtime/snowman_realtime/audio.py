@@ -261,6 +261,9 @@ class RawAplayPlayer:
         )
 
     def play(self, audio_bytes: bytes) -> None:
+        self._play_with_gain(audio_bytes, gain=self._output_gain)
+
+    def _play_with_gain(self, audio_bytes: bytes, gain: float) -> None:
         if not audio_bytes:
             return
         with self._lock:
@@ -268,9 +271,7 @@ class RawAplayPlayer:
             assert self._process is not None
             if self._process.stdin is None:
                 raise RuntimeError("aplay stdin is not available")
-            scaled_bytes = audio_bytes
-            if self._output_gain != 1.0:
-                scaled_bytes = audioop.mul(audio_bytes, 2, self._output_gain)
+            scaled_bytes = self._apply_gain(audio_bytes, gain)
             chunk_duration_seconds = len(scaled_bytes) / (2 * self._sample_rate)
             now = time.monotonic()
             if self._playback_available_at <= 0:
@@ -303,9 +304,20 @@ class RawAplayPlayer:
         with self._lock:
             self._shutdown_locked(force=False)
 
-    def play_wav_file(self, path: str | Path, blocking: bool = True) -> None:
+    def play_wav_file(
+        self,
+        path: str | Path,
+        blocking: bool = True,
+        gain: float | None = None,
+    ) -> None:
         wav_path = Path(path)
-        LOGGER.info("Playing cue wav: %s (blocking=%s)", wav_path, blocking)
+        effective_gain = self._output_gain if gain is None else gain
+        LOGGER.info(
+            "Playing cue wav: %s (blocking=%s gain=%.2f)",
+            wav_path,
+            blocking,
+            effective_gain,
+        )
         with wave.open(str(wav_path), "rb") as wav_file:
             sample_rate = wav_file.getframerate()
             sample_width = wav_file.getsampwidth()
@@ -333,19 +345,28 @@ class RawAplayPlayer:
             )
 
         if blocking:
-            self.play(audio_bytes)
+            self._play_with_gain(audio_bytes, gain=effective_gain)
             self.drain()
             LOGGER.info("Cue playback finished: %s", wav_path)
             return
 
-        threading.Thread(target=self._play_wav_async, args=(audio_bytes,), daemon=True).start()
+        threading.Thread(
+            target=self._play_wav_async,
+            args=(audio_bytes, effective_gain),
+            daemon=True,
+        ).start()
 
-    def _play_wav_async(self, audio_bytes: bytes) -> None:
+    def _play_wav_async(self, audio_bytes: bytes, gain: float) -> None:
         try:
-            self.play(audio_bytes)
+            self._play_with_gain(audio_bytes, gain=gain)
             self.drain()
         except Exception:
             LOGGER.exception("Failed to play async wav cue")
+
+    def _apply_gain(self, audio_bytes: bytes, gain: float) -> bytes:
+        if gain == 1.0:
+            return audio_bytes
+        return audioop.mul(audio_bytes, 2, gain)
 
     def _shutdown_locked(self, force: bool) -> None:
         if self._process is None:

@@ -31,6 +31,7 @@ from .events import (
     TranscriptFinal,
 )
 from .realtime_client import RealtimeConnectionClosed, RealtimeVoiceAgent
+from .status_led import SessionStatusLed
 from .tools import ToolRegistry
 from .wake_word import WakeWordDetector
 
@@ -116,6 +117,7 @@ class SnowmanRealtimeAssistant:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._wake_detector = WakeWordDetector(settings)
+        self._status_led = SessionStatusLed()
         self._tool_registry = ToolRegistry()
 
     def run(self) -> None:
@@ -132,6 +134,7 @@ class SnowmanRealtimeAssistant:
                 while self._run_session():
                     LOGGER.info("Wake-word interrupt requested a new turn")
         finally:
+            self._status_led.close()
             self._wake_detector.close()
 
     def _run_auto_trigger_loop(self) -> None:
@@ -210,7 +213,17 @@ class SnowmanRealtimeAssistant:
             LOGGER.info("Session state: %s -> %s (%s)", current_state.value, next_state.value, reason)
         else:
             LOGGER.info("Session state: %s -> %s", current_state.value, next_state.value)
+        self._apply_session_led_state(next_state)
         return next_state
+
+    def _apply_session_led_state(self, state: SessionWindowState) -> None:
+        if state in {SessionWindowState.READY, SessionWindowState.RECORDING_TURN}:
+            self._status_led.user_can_speak()
+            return
+        if state in {SessionWindowState.WAITING_FOR_REPLY, SessionWindowState.PLAYING_REPLY}:
+            self._status_led.processing()
+            return
+        self._status_led.off()
 
     def _is_end_transcript(self, transcript: str) -> bool:
         normalized = "".join(ch for ch in transcript.strip().lower() if ch.isalnum())
@@ -371,7 +384,11 @@ class SnowmanRealtimeAssistant:
                 session_state = self._set_session_state(session_state, SessionWindowState.READY)
                 if turn_index == 0 and Path(self._settings.ready_cue_path).exists():
                     try:
-                        player.play_wav_file(self._settings.ready_cue_path, blocking=True)
+                        player.play_wav_file(
+                            self._settings.ready_cue_path,
+                            blocking=True,
+                            gain=self._settings.cue_output_gain,
+                        )
                     except Exception:
                         LOGGER.exception("Failed to play ready cue")
 
@@ -533,6 +550,7 @@ class SnowmanRealtimeAssistant:
     def _run_single_turn_session(self) -> bool:
         session_started_at = time.monotonic()
         player, microphone, resampler = self._build_session_io()
+        self._status_led.user_can_speak()
 
         should_stop = False
         response_started = False
@@ -593,7 +611,11 @@ class SnowmanRealtimeAssistant:
         try:
             if Path(self._settings.ready_cue_path).exists():
                 try:
-                    player.play_wav_file(self._settings.ready_cue_path, blocking=True)
+                    player.play_wav_file(
+                        self._settings.ready_cue_path,
+                        blocking=True,
+                        gain=self._settings.cue_output_gain,
+                    )
                 except Exception:
                     LOGGER.exception("Failed to play ready cue")
 
@@ -626,6 +648,7 @@ class SnowmanRealtimeAssistant:
             LOGGER.info("Realtime session started with %d placeholder tools", len(self._tool_registry.tools))
             LOGGER.info("Realtime connect duration: %.2fs", time.monotonic() - connect_started_at)
 
+            self._status_led.processing()
             playback_result = self._play_response_until_done_or_interrupt(
                 client=client,
                 player=player,
@@ -645,6 +668,7 @@ class SnowmanRealtimeAssistant:
                 self._play_post_reply_cue(player)
             return playback_result == PlaybackResult.INTERRUPTED
         finally:
+            self._status_led.off()
             try:
                 microphone.stop()
             except Exception:
@@ -743,7 +767,11 @@ class SnowmanRealtimeAssistant:
         if not cue_path or not Path(cue_path).exists():
             return
         try:
-            player.play_wav_file(cue_path, blocking=True)
+            player.play_wav_file(
+                cue_path,
+                blocking=True,
+                gain=self._settings.cue_output_gain,
+            )
         except Exception:
             LOGGER.exception("Failed to play post-reply cue")
 
@@ -752,7 +780,11 @@ class SnowmanRealtimeAssistant:
         if not cue_path or not Path(cue_path).exists():
             return
         try:
-            player.play_wav_file(cue_path, blocking=True)
+            player.play_wav_file(
+                cue_path,
+                blocking=True,
+                gain=self._settings.cue_output_gain,
+            )
         except Exception:
             LOGGER.exception("Failed to play failure cue")
 
@@ -761,7 +793,11 @@ class SnowmanRealtimeAssistant:
         if not cue_path or not Path(cue_path).exists():
             return
         try:
-            player.play_wav_file(cue_path, blocking=True)
+            player.play_wav_file(
+                cue_path,
+                blocking=True,
+                gain=self._settings.cue_output_gain,
+            )
         except Exception:
             LOGGER.exception("Failed to play session end cue")
 

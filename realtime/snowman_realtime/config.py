@@ -69,6 +69,7 @@ class Settings:
     session_end_cue_path: str
     playback_device: str
     output_gain: float
+    cue_output_gain: float
     input_ns_enabled: bool
     input_agc_enabled: bool
     input_ns_noise_floor_margin: float
@@ -159,6 +160,7 @@ class Settings:
             ),
             playback_device=os.getenv("PLAYBACK_DEVICE", "auto").strip(),
             output_gain=float(os.getenv("OUTPUT_GAIN", "0.5")),
+            cue_output_gain=float(os.getenv("CUE_OUTPUT_GAIN", "0.22")),
             input_ns_enabled=_get_bool("INPUT_NS_ENABLED", False),
             input_agc_enabled=_get_bool("INPUT_AGC_ENABLED", False),
             input_ns_noise_floor_margin=float(
