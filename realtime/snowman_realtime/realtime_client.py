@@ -9,7 +9,7 @@ from collections.abc import Callable
 
 import websocket
 
-from .config import Settings
+from .config import Settings, build_runtime_instructions
 from .events import (
     ResponseAudioChunk,
     ResponsePlaybackDone,
@@ -49,6 +49,15 @@ class RealtimeVoiceAgent:
         self._stop_event = threading.Event()
         self._connection_closed_event = threading.Event()
         self._response_text_parts: dict[str, list[str]] = {}
+
+    def _session_instructions(self) -> str:
+        return build_runtime_instructions(self._settings.system_prompt)
+
+    def _response_instructions(self) -> str:
+        return build_runtime_instructions(
+            self._settings.system_prompt,
+            latest_turn_only=True,
+        )
 
     def connect(self) -> None:
         LOGGER.info("Connecting to Realtime: %s", self._settings.realtime_ws_url)
@@ -94,7 +103,7 @@ class RealtimeVoiceAgent:
                     "type": "realtime",
                     "model": self._settings.openai_realtime_model,
                     "output_modalities": ["audio"],
-                    "instructions": self._settings.system_prompt,
+                    "instructions": self._session_instructions(),
                     "audio": {
                         "input": input_audio,
                         "output": {
@@ -156,32 +165,7 @@ class RealtimeVoiceAgent:
             {
                 "type": "response.create",
                 "response": {
-                    "instructions": (
-                        "Do not greet, welcome, or introduce yourself. "
-                        "Answer only the user's most recent utterance. "
-                        "Your name is Snowman. If asked your name, identity, or who you are, answer Snowman directly. "
-                        "Never say that you do not have a name. "
-                        "Tone: clear, calm, and direct. "
-                        "Pronunciation: clear, articulate, and steady, while keeping a natural conversational flow. "
-                        "Pacing: use brief, purposeful pauses after important points so the user can follow comfortably. "
-                        "Emotion: warm but restrained. "
-                        "You cannot see the user's surroundings, objects, screen, posture, or camera feed. "
-                        "Do not claim to see, inspect, identify, or describe any visual detail unless the user explicitly states those details in words. "
-                        "Do not say things like 'I can see', 'it looks like', or similar. "
-                        "If the audio is unclear, incomplete, nonspeech, or you are not confident what the user said, briefly say that you did not catch it and ask them to repeat. "
-                        "Do not guess or invent meaning from unclear audio. "
-                        "Use tools for current local time, recent news, weather, prices, and other current information instead of guessing. "
-                        "Reply in one short sentence by default, and use two short sentences only when needed for clarity. "
-                        "Answer the question directly. "
-                        "Keep the answer brief and complete. "
-                        "Prefer a direct answer over explanation. "
-                        "If the user is clearly ending the conversation, reply with one very short goodbye only. "
-                        "Do not start with filler like 'okay', 'sure', or '当然'. "
-                        "Do not add pleasantries, thanks, return questions, or offers to help unless the user asks for them. "
-                        "Do not list multiple examples, options, or extra background unless the user asks for them. "
-                        "For translation requests, give just the translation unless the user asks for explanation. "
-                        "Reply in the same language as the clearly understood user utterance; if the utterance is unclear, use English."
-                    ),
+                    "instructions": self._response_instructions(),
                     "max_output_tokens": self._settings.response_max_output_tokens,
                 },
             }

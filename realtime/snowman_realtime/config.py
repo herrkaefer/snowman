@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -39,6 +40,39 @@ DEFAULT_SYSTEM_PROMPT = (
     "Keep it natural and speech-friendly. "
     "Reply in the same language as the clearly understood user utterance; if the utterance is unclear, use English."
 )
+LATEST_INFO_POLICY = (
+    "For any question that could plausibly depend on current or changing information, you must call web_search before answering and must not answer from memory. "
+    "This includes politics and officeholders, current leaders, recent events, news, weather, prices, exchange rates, laws, regulations, product availability, schedules, sports results, and anything phrased as current, latest, today, now, or recent. "
+    "If web_search fails or is unavailable, briefly say that you cannot verify the latest information right now."
+)
+LATEST_TURN_POLICY = (
+    "Do not greet, welcome, or introduce yourself. "
+    "Answer only the user's most recent utterance."
+)
+
+
+def build_runtime_instructions(
+    system_prompt: str,
+    *,
+    latest_turn_only: bool = False,
+    now: datetime | None = None,
+) -> str:
+    current_time = (now or datetime.now().astimezone()).replace(microsecond=0)
+    utc_offset = current_time.strftime("%z")
+    if len(utc_offset) == 5:
+        utc_offset = f"{utc_offset[:3]}:{utc_offset[3:]}"
+    current_time_context = (
+        "Current local date and time on the Raspberry Pi: "
+        f"{current_time.strftime('%A, %Y-%m-%d %H:%M:%S')} "
+        f"{current_time.tzname() or 'local'} (UTC{utc_offset}). "
+        "You may answer ordinary current date or time questions directly from this timestamp. "
+        "Use local_time only if you need to re-check the exact current local time because the conversation has been open for a while or the user explicitly wants the precise current time."
+    )
+
+    instruction_parts = [system_prompt.strip(), current_time_context, LATEST_INFO_POLICY]
+    if latest_turn_only:
+        instruction_parts.append(LATEST_TURN_POLICY)
+    return "\n\n".join(part for part in instruction_parts if part).strip()
 
 
 def _get_bool(name: str, default: bool) -> bool:

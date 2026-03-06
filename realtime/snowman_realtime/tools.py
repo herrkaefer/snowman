@@ -26,7 +26,10 @@ class ToolRegistry:
         self._definitions = [
             ToolDefinition(
                 name="local_time",
-                description="Get the current local time on the Raspberry Pi.",
+                description=(
+                    "Get the exact current local time on the Raspberry Pi. "
+                    "Use this only when the provided session timestamp may be stale or the user explicitly wants the precise current time."
+                ),
                 parameters={
                     "type": "object",
                     "properties": {},
@@ -36,7 +39,8 @@ class ToolRegistry:
             ToolDefinition(
                 name="web_search",
                 description=(
-                    "Search the web for current information such as news, weather, prices, or recent facts."
+                    "Search the web for current or changing information. "
+                    "Required for recent facts and time-sensitive questions such as current officeholders, news, weather, prices, laws, schedules, standings, or anything asked as current, latest, today, now, or recent."
                 ),
                 parameters={
                     "type": "object",
