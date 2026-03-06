@@ -946,6 +946,8 @@ class SnowmanRealtimeAssistant:
         if not cue_path or not Path(cue_path).exists():
             return
         try:
+            if self._settings.post_reply_cue_delay_seconds > 0:
+                time.sleep(self._settings.post_reply_cue_delay_seconds)
             player.play_wav_file(
                 cue_path,
                 blocking=True,

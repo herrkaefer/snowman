@@ -304,7 +304,7 @@ class RawAplayPlayer:
         self,
         *,
         grace_seconds: float = 0.08,
-        max_wait_seconds: float = 0.45,
+        max_wait_seconds: float = 0.75,
     ) -> None:
         with self._lock:
             if self._process is None:
@@ -314,7 +314,7 @@ class RawAplayPlayer:
         if wait_seconds > 0:
             time.sleep(wait_seconds)
         with self._lock:
-            self._shutdown_locked(force=True)
+            self._shutdown_locked(force=False)
 
     def close(self) -> None:
         with self._lock:

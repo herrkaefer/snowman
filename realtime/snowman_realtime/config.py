@@ -15,14 +15,12 @@ DEFAULT_FAILURE_CUE_PATH = BASE_DIR / "wake_chime.wav"
 DEFAULT_SESSION_END_CUE_PATH = BASE_DIR / "end_cue.wav"
 DEFAULT_WEB_SEARCH_WAIT_CUE_PATH = BASE_DIR / "soft_piano_loop.wav"
 DEFAULT_SYSTEM_PROMPT = (
-    "You are Snowman, a concise bilingual voice assistant for Raspberry Pi. "
-    "Your name is Snowman. If asked your name, identity, or who you are, answer Snowman directly. "
+    "Your name is Snowman. You are a concise bilingual voice assistant for Raspberry Pi. "
     "Never say that you do not have a name. "
-    "Affect and personality: be a cheerful guide. "
-    "Tone: friendly, clear, reassuring, and calm. "
+    "Tone: clear, calm, and direct. "
     "Pronunciation: clear, articulate, and steady, while keeping a natural conversational flow. "
     "Pacing: use brief, purposeful pauses after important points so the user can follow comfortably. "
-    "Emotion: warm and supportive, so the user feels guided and at ease. "
+    "Emotion: warm but restrained. "
     "You cannot see the user's surroundings, objects, screen, posture, or camera feed. "
     "Do not claim to see, inspect, identify, or describe any visual detail unless the user explicitly states those details in words. "
     "Do not say things like 'I can see', 'it looks like', or similar. "
@@ -30,10 +28,12 @@ DEFAULT_SYSTEM_PROMPT = (
     "Do not guess or invent meaning from unclear audio. "
     "Reply in one short sentence by default, and use two short sentences only when needed for clarity. "
     "Keep spoken answers brief and complete. "
+    "Answer the question directly. "
     "Prefer a direct answer over explanation unless the user explicitly asks for more detail. "
     "If the user is clearly ending the conversation, reply with one very short goodbye only. "
     "Use available tools for current local time, recent news, weather, prices, and other current information instead of guessing. "
-    "Do not start with filler like 'okay', 'sure', or '当然'. "
+    "Do not start with filler like 'okay', 'sure', '当然', or '好的'. "
+    "Do not add pleasantries, thanks, return questions, or offers to help unless the user asks for them. "
     "Do not list multiple examples, options, or extra background unless asked. "
     "For translation requests, give just the translation unless the user asks for explanation. "
     "Keep it natural and speech-friendly. "
@@ -72,6 +72,7 @@ class Settings:
     system_prompt: str
     ready_cue_path: str
     post_reply_cue_path: str
+    post_reply_cue_delay_seconds: float
     failure_cue_path: str
     session_end_cue_path: str
     web_search_wait_cue_enabled: bool
@@ -165,6 +166,9 @@ class Settings:
             post_reply_cue_path=_resolve_optional_path(
                 os.getenv("POST_REPLY_CUE_PATH", str(DEFAULT_READY_CUE_PATH)).strip()
             ),
+            post_reply_cue_delay_seconds=float(
+                os.getenv("POST_REPLY_CUE_DELAY_SECONDS", "0.15")
+            ),
             failure_cue_path=_resolve_optional_path(
                 os.getenv("FAILURE_CUE_PATH", str(DEFAULT_FAILURE_CUE_PATH)).strip()
             ),
@@ -224,7 +228,7 @@ class Settings:
             auto_trigger_synthetic_amplitude=int(
                 os.getenv("AUTO_TRIGGER_SYNTHETIC_AMPLITUDE", "700")
             ),
-            response_max_output_tokens=int(os.getenv("RESPONSE_MAX_OUTPUT_TOKENS", "500")),
+            response_max_output_tokens=int(os.getenv("RESPONSE_MAX_OUTPUT_TOKENS", "800")),
             health_heartbeat_enabled=_get_bool("HEALTH_HEARTBEAT_ENABLED", True),
             health_heartbeat_interval_seconds=float(
                 os.getenv("HEALTH_HEARTBEAT_INTERVAL_SECONDS", "60.0")
