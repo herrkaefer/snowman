@@ -2,21 +2,21 @@
 
 Snowman now has two separate apps:
 
-- `custom_pipeline/`: the existing local-first assistant, frozen as a baseline
+- `pipeline/`: the existing local-first assistant, frozen as a baseline
 - `realtime/`: a new OpenAI Realtime API version for Raspberry Pi voice-agent work
 
 ## Layout
 
 ```text
 snowman/
-├── custom_pipeline/
+├── pipeline/
 ├── realtime/
 └── plans/
 ```
 
 ## Custom Pipeline App
 
-The original app was moved intact into [`custom_pipeline/`](./custom_pipeline/README.md). It remains the fallback and comparison target while the new realtime path is developed.
+The original app was moved intact into [`pipeline/`](./pipeline/README.md). It remains the fallback and comparison target while the new realtime path is developed.
 
 ## Realtime App
 
