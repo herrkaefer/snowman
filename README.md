@@ -42,12 +42,17 @@ The new app lives in [`realtime/`](./realtime/README.md). Its v1 architecture is
 flowchart LR
     user["User"] --> wake["Porcupine wake word"]
     wake --> session["Session controller"]
-    session --> mic["Pi microphone + local audio cleanup"]
-    mic --> rt["OpenAI Realtime session over WebSocket"]
-    rt --> tools["Tool calls: web_search / local_time"]
+    session --> rt["Realtime audio over WebSocket"]
+    rt --> tools["Tool registry"]
+    tools --> webTool["web_search"]
+    webTool --> web["Web"]
+    tools --> memoryTool["memory tools"]
+    memoryTool --> memory["Persistent memory"]
+    tools --> gpioTool["GPIO tools"]
+    gpioTool --> gpio["GPIO devices"]
     tools --> rt
     rt --> speaker["Streamed reply playback"]
-    speaker --> next["Next turn in half-duplex loop"]
+    speaker --> next["Next turn in session"]
     next --> session
 ```
 
