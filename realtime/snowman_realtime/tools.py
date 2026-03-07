@@ -97,7 +97,7 @@ class ToolRegistry:
     def _web_search(self, query: str) -> dict[str, Any]:
         LOGGER.info("Running OpenAI web_search tool for query: %s", query)
         body = {
-            "model": "gpt-4.1-mini",
+            "model": self._settings.web_search_model,
             "input": (
                 "Search the web and answer briefly in the same language as the query. "
                 "Focus on current factual information. Include at most three short sources.\n\n"

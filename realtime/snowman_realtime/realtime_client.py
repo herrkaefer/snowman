@@ -170,6 +170,10 @@ class RealtimeVoiceAgent:
                 },
             }
         )
+        LOGGER.info(
+            "Sent Realtime response.create: max_output_tokens=%s",
+            self._settings.response_max_output_tokens,
+        )
 
     def submit_tool_output(self, *, call_id: str, output_json: str) -> None:
         LOGGER.info("Submitting tool output for call_id=%s", call_id)
@@ -236,6 +240,7 @@ class RealtimeVoiceAgent:
     def _handle_message(self, message: dict[str, object]) -> None:
         message_type = str(message.get("type", ""))
         response_id = self._extract_response_id(message)
+        self._log_message_summary(message_type, response_id, message)
 
         if message_type == "session.created":
             session = message.get("session") or {}
@@ -287,6 +292,15 @@ class RealtimeVoiceAgent:
             return
 
         if message_type == "response.done":
+            response_status = self._response_status(message.get("response"))
+            if response_status in {"failed", "cancelled", "incomplete"}:
+                self._drop_response_text(response_id)
+                self._event_handler(
+                    SessionError(
+                        message=self._response_failure_message(message, response_status)
+                    )
+                )
+                return
             self._handle_response_done(message)
             text = self._consume_response_text(response_id)
             if text:
@@ -314,6 +328,12 @@ class RealtimeVoiceAgent:
                 self._event_handler(TranscriptFinal(text=transcript))
             return
 
+        if message_type == "conversation.item.input_audio_transcription.failed":
+            self._event_handler(
+                SessionError(message=self._transcription_failure_message(message))
+            )
+            return
+
         if message_type == "input_audio_buffer.speech_started":
             self._event_handler(ResponseInterrupted(reason="speech_started"))
             return
@@ -325,6 +345,15 @@ class RealtimeVoiceAgent:
             else:
                 error_message = str(error)
             self._event_handler(SessionError(message=error_message))
+            return
+
+        if message_type.startswith("response.") or message_type.startswith("conversation.item."):
+            LOGGER.warning(
+                "Unhandled Realtime event: type=%s response_id=%s keys=%s",
+                message_type,
+                response_id,
+                sorted(message.keys()),
+            )
 
     def _extract_response_id(self, message: dict[str, object]) -> str | None:
         raw_response_id = message.get("response_id")
@@ -341,6 +370,12 @@ class RealtimeVoiceAgent:
 
     def _response_key(self, response_id: str | None) -> str:
         return response_id or "__default__"
+
+    def _response_status(self, response: object) -> str:
+        if not isinstance(response, dict):
+            return ""
+        status = response.get("status")
+        return status if isinstance(status, str) else ""
 
     def _consume_response_text(self, response_id: str | None) -> str:
         response_key = self._response_key(response_id)
@@ -384,6 +419,153 @@ class RealtimeVoiceAgent:
                     arguments_json=arguments,
                 )
             )
+
+    def _log_message_summary(
+        self,
+        message_type: str,
+        response_id: str | None,
+        message: dict[str, object],
+    ) -> None:
+        if message_type == "response.created":
+            response = message.get("response")
+            status = response.get("status") if isinstance(response, dict) else None
+            LOGGER.info(
+                "Realtime event: type=%s response_id=%s status=%s",
+                message_type,
+                response_id,
+                status,
+            )
+            return
+
+        if message_type == "response.done":
+            response = message.get("response")
+            status = response.get("status") if isinstance(response, dict) else None
+            output_types = self._response_output_types(response)
+            LOGGER.info(
+                "Realtime event: type=%s response_id=%s status=%s output=%s",
+                message_type,
+                response_id,
+                status,
+                output_types,
+            )
+            return
+
+        if message_type in {
+            "response.output_item.added",
+            "response.output_item.done",
+            "response.content_part.added",
+            "response.content_part.done",
+            "response.text.done",
+            "response.output_text.done",
+            "response.function_call_arguments.done",
+            "rate_limits.updated",
+        }:
+            LOGGER.info(
+                "Realtime event: type=%s response_id=%s summary=%s",
+                message_type,
+                response_id,
+                self._message_summary(message),
+            )
+            return
+
+        if message_type == "error":
+            LOGGER.error(
+                "Realtime event: type=%s response_id=%s summary=%s",
+                message_type,
+                response_id,
+                self._message_summary(message),
+            )
+
+    def _response_output_types(self, response: object) -> list[str]:
+        if not isinstance(response, dict):
+            return []
+        output = response.get("output")
+        if not isinstance(output, list):
+            return []
+        result: list[str] = []
+        for item in output:
+            if not isinstance(item, dict):
+                continue
+            item_type = item.get("type")
+            if isinstance(item_type, str):
+                result.append(item_type)
+        return result
+
+    def _message_summary(self, message: dict[str, object]) -> str:
+        item = message.get("item")
+        if isinstance(item, dict):
+            item_type = item.get("type")
+            name = item.get("name")
+            call_id = item.get("call_id")
+            return f"item_type={item_type} name={name} call_id={call_id}"
+
+        part = message.get("part")
+        if isinstance(part, dict):
+            return f"part_type={part.get('type')}"
+
+        error = message.get("error")
+        if isinstance(error, dict):
+            return f"code={error.get('code')} message={error.get('message')}"
+
+        rate_limits = message.get("rate_limits")
+        if isinstance(rate_limits, list):
+            names: list[str] = []
+            for limit in rate_limits:
+                if not isinstance(limit, dict):
+                    continue
+                name = limit.get("name")
+                remaining = limit.get("remaining")
+                reset = limit.get("reset_seconds")
+                names.append(f"{name}:remaining={remaining},reset={reset}")
+            return "; ".join(names)
+
+        delta = message.get("delta")
+        if isinstance(delta, str):
+            return f"delta_len={len(delta)}"
+
+        text = message.get("text")
+        if isinstance(text, str):
+            return f"text={text[:80]}"
+
+        transcript = message.get("transcript")
+        if isinstance(transcript, str):
+            return f"transcript={transcript[:80]}"
+
+        return f"keys={sorted(message.keys())}"
+
+    def _response_failure_message(
+        self,
+        message: dict[str, object],
+        response_status: str,
+    ) -> str:
+        response = message.get("response")
+        if isinstance(response, dict):
+            status_details = response.get("status_details")
+            if isinstance(status_details, dict):
+                error = status_details.get("error")
+                if isinstance(error, dict):
+                    code = error.get("code")
+                    detail = error.get("message")
+                    if code or detail:
+                        return (
+                            f"Realtime response {response_status}: "
+                            f"{code or 'unknown'} {detail or ''}".strip()
+                        )
+                reason = status_details.get("reason")
+                if isinstance(reason, str) and reason:
+                    return f"Realtime response {response_status}: {reason}"
+        return f"Realtime response {response_status}"
+
+    def _transcription_failure_message(self, message: dict[str, object]) -> str:
+        error = message.get("error")
+        if isinstance(error, dict):
+            code = error.get("code")
+            detail = error.get("message")
+            if code or detail:
+                return (
+                    f"Input transcription failed: {code or 'unknown'} {detail or ''}"
+                ).strip()
+        return "Input transcription failed"
 
     def _recv_until_session_created(self) -> None:
         message = self._recv_bootstrap_message(

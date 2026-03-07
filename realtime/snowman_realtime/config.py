@@ -113,6 +113,7 @@ class Settings:
     web_search_wait_cue_path: str
     web_search_wait_cue_delay_seconds: float
     web_search_wait_cue_gain: float
+    web_search_model: str
     playback_device: str
     output_gain: float
     cue_output_gain: float
@@ -168,7 +169,7 @@ class Settings:
             openai_realtime_url=os.getenv(
                 "OPENAI_REALTIME_URL", "wss://api.openai.com/v1/realtime"
             ).strip(),
-            openai_realtime_model=os.getenv("OPENAI_REALTIME_MODEL", "gpt-realtime").strip(),
+            openai_realtime_model=os.getenv("OPENAI_REALTIME_MODEL", "gpt-realtime-mini").strip(),
             openai_voice=os.getenv("OPENAI_VOICE", "alloy").strip(),
             input_transcription_model=os.getenv(
                 "INPUT_TRANSCRIPTION_MODEL", "gpt-4o-mini-transcribe"
@@ -180,7 +181,7 @@ class Settings:
                     os.getenv("CUSTOM_WAKE_KEYWORD_PATH", str(DEFAULT_WAKE_WORD_PATH)).strip()
                 )
             ),
-            wake_word_sensitivity=float(os.getenv("WAKE_WORD_SENSITIVITY", "0.65")),
+            wake_word_sensitivity=float(os.getenv("WAKE_WORD_SENSITIVITY", "0.5")),
             audio_device_index=int(os.getenv("AUDIO_DEVICE_INDEX", "-1")),
             input_frame_length=int(os.getenv("INPUT_FRAME_LENGTH", "512")),
             input_sample_rate=int(os.getenv("INPUT_SAMPLE_RATE", "16000")),
@@ -220,6 +221,7 @@ class Settings:
                 os.getenv("WEB_SEARCH_WAIT_CUE_DELAY_SECONDS", "0.5")
             ),
             web_search_wait_cue_gain=float(os.getenv("WEB_SEARCH_WAIT_CUE_GAIN", "0.20")),
+            web_search_model=os.getenv("WEB_SEARCH_MODEL", "gpt-5.2").strip(),
             playback_device=os.getenv("PLAYBACK_DEVICE", "auto").strip(),
             output_gain=float(os.getenv("OUTPUT_GAIN", "0.5")),
             cue_output_gain=float(os.getenv("CUE_OUTPUT_GAIN", "0.22")),

@@ -38,7 +38,7 @@ cp .env.example .env
 - `OPENAI_API_KEY`
 - `PORCUPINE_ACCESS_KEY`
 - audio and wake-word settings if needed
-- `WAKE_WORD_SENSITIVITY` defaults to `0.65`; raise it carefully if wake-word interrupt misses during playback
+- `WAKE_WORD_SENSITIVITY` defaults to `0.5`; raise it carefully if wake-word interrupt misses during playback
 - `SYSTEM_PROMPT` is not required in `.env`; the default assistant prompt now lives in code and is augmented at runtime with the current local date/time and current-information tool rules
 
 ## Run
@@ -129,6 +129,7 @@ python probe_realtime_connect.py --attempts 20 --with-audio --audio-ms 2500 --up
 - Optional local input cleanup can be enabled with `INPUT_NS_ENABLED` and `INPUT_AGC_ENABLED`.
 - The current `NS/AGC` path is lightweight local preprocessing designed to be safe on Raspberry Pi and easy to disable if it hurts recognition.
 - Direct Realtime tools currently include `web_search` for current information and `local_time` for exact current local time.
+- `web_search` uses `WEB_SEARCH_MODEL`, which now defaults to `gpt-5.2`.
 - Realtime connection/setup now uses configurable timeouts and exponential retry backoff, with three total attempts by default.
 
 ## Current Hardware Config
