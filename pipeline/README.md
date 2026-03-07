@@ -2,6 +2,25 @@
 
 A lightweight, privacy-focused voice assistant that runs primarily locally on your machine. This project demonstrates how to build a capable voice assistant with minimal cloud dependencies, leveraging state-of-the-art open-source models and libraries.
 
+## Architecture
+
+```mermaid
+flowchart LR
+    user["User"] --> wake["Porcupine wake word"]
+    wake --> session["Conversation session controller"]
+    session --> capture["PvRecorder audio capture"]
+    capture --> vad["Cobra VAD turn detection"]
+    vad --> stt["faster-whisper transcription"]
+    stt --> llm["Gemini chat session"]
+    llm -. optional .-> search["Tavily web search"]
+    search -. context .-> llm
+    llm --> tts["Edge TTS synthesis"]
+    tts --> speaker["Local speaker playback"]
+    speaker --> next["Next turn in session"]
+    next --> session
+    session -. timeout / goodbye .-> wake
+```
+
 ## Features
 
 - **Wake Word Detection**: Uses Porcupine for reliable wake word detection
