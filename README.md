@@ -1,4 +1,10 @@
-# Snowman
+<div align="center">
+  <img src="./assets/snowman_retro.png" width="240" height="240" alt="Snowman Retro Pixel">
+  <h1>Snowman</h1>
+  <p><strong>The Home Voice Agent for Raspberry Pi</strong></p>
+</div>
+
+---
 
 Snowman now has two separate apps:
 

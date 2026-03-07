@@ -1,0 +1,18 @@
+<svg width="400" height="400" viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+  <rect width="400" height="400" fill="#000" />
+  
+  <!-- Snowman -->
+  <rect x="140" y="220" width="120" height="100" fill="#fff" />
+  <rect x="160" y="140" width="80" height="70" fill="#fff" />
+  
+  <!-- Happy Eyes (V shape) -->
+  <path d="M175,165 L180,175 L185,165" fill="none" stroke="#f43f5e" stroke-width="4" />
+  <path d="M215,165 L220,175 L225,165" fill="none" stroke="#f43f5e" stroke-width="4" />
+
+  <!-- Heart Pulse -->
+  <rect x="190" y="240" width="20" height="20" fill="#f43f5e">
+    <animate attributeName="transform" attributeType="XML" type="scale" from="1" to="1.2" additive="sum" dur="0.6s" repeatCount="indefinite" />
+  </rect>
+
+  <text x="200" y="370" font-family="monospace" font-size="24" fill="#f43f5e" text-anchor="middle">HAlLO! I'M READY</text>
+</svg>
