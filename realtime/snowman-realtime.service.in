@@ -1,0 +1,20 @@
+[Unit]
+Description=Snowman Realtime Voice Assistant
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__DEPLOY_USER__
+Group=audio
+WorkingDirectory=__REALTIME_DIR__
+EnvironmentFile=__REALTIME_DIR__/.env
+ExecStart=__REALTIME_DIR__/start_realtime.sh
+Restart=always
+RestartSec=5
+KillMode=control-group
+StandardOutput=append:__REALTIME_DIR__/realtime.log
+StandardError=append:__REALTIME_DIR__/realtime.log
+
+[Install]
+WantedBy=multi-user.target

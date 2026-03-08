@@ -35,6 +35,14 @@ flowchart LR
 
 ## Setup
 
+Preferred one-command deploy on Raspberry Pi:
+
+```bash
+./realtime/deploy.sh --host <pi_hostname/ip> --user <username> [--port 22] [--env-file realtime/.env]
+```
+
+This script handles both first install and later redeploys. It syncs the app to `/home/<user>/voice-assistant-realtime/realtime`, refreshes the virtualenv, installs the parameterized systemd units, enables `snowman-realtime.service` and `snowman-realtime-healthcheck.timer`, and restarts the main service.
+
 1. Create and activate a virtual environment:
 
 ```bash

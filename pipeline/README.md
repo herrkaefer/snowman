@@ -70,6 +70,16 @@ flowchart LR
 
 ## Installation on Raspberry Pi
 
+Preferred one-command deploy:
+
+```bash
+./pipeline/deploy.sh --host <pi_hostname/ip> --user <username> [--port 22] [--env-file pipeline/.env.pi]
+```
+
+This script handles both first install and later redeploys. It syncs the app to `/home/<user>/voice-assistant`, refreshes the virtualenv, installs the template systemd unit, and restarts `voice-assistant@<user>.service`.
+
+Legacy manual flow:
+
 1. Ensure you have the following:
    - A Raspberry Pi (4 or newer recommended)
    - SSH access to your Raspberry Pi
@@ -95,13 +105,13 @@ The script will:
 After installation, you can manage the service using:
 ```bash
 # Start the service
-sudo systemctl start voice-assistant.service
+sudo systemctl start voice-assistant@<username>.service
 
 # Check status
-sudo systemctl status voice-assistant.service
+sudo systemctl status voice-assistant@<username>.service
 
 # View logs
-sudo journalctl -u voice-assistant.service -f
+sudo journalctl -u voice-assistant@<username>.service -f
 ```
 
 ## Test on PC
