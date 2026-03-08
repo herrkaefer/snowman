@@ -40,6 +40,7 @@ temp_tts.wav
 *.ppn
 *.wav
 *.mp3
+!realtime/*.wav
 
 # Logs and databases
 *.log
