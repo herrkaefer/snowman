@@ -99,8 +99,10 @@ AUTO_TRIGGER_SYNTHETIC_AUDIO_MS=2500
 - The microphone is still locally gated per turn; it does not stay continuously open during reply playback.
 - Reply playback is not treated as interruptible; the next turn begins after the current reply finishes.
 - Each Realtime session and each response now receive dynamic prompt context with the current local date/time on the Raspberry Pi.
+- Optional fixed Raspberry Pi location can also be injected into the runtime prompt for local-context questions such as weather, nearby places, and commute.
 - For current or changing facts such as officeholders, news, weather, prices, laws, schedules, and anything phrased as current/latest/today/now/recent, the assistant is instructed to call `web_search` before answering instead of relying on memory.
 - Ordinary date/time questions can usually be answered directly from the injected current timestamp; `local_time` remains available as a fallback for precise current-time checks in longer sessions.
+- When location is configured, the same city/region/country/timezone is also passed to `web_search` as approximate user location.
 
 Common session-window settings:
 
@@ -108,6 +110,13 @@ Common session-window settings:
 - `SESSION_FOLLOWUP_TIMEOUT=6.0` controls how long follow-up turns wait for speech
 - `SESSION_MAX_TURNS=0` means unlimited turns until timeout or end phrase
 - `POST_REPLY_CUE_PATH=ready_cue.wav` replays the ready cue after each completed reply by default
+
+Optional fixed location settings:
+
+- `LOCATION_CITY=Chicago`
+- `LOCATION_REGION=IL`
+- `LOCATION_COUNTRY_CODE=US`
+- `LOCATION_TIMEZONE=America/Chicago`
 
 ## Probe Realtime Connectivity
 

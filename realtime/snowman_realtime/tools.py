@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any
 from urllib import error, request
 
-from .config import Settings
+from .config import Settings, build_web_search_user_location
 
 
 LOGGER = logging.getLogger(__name__)
@@ -96,6 +96,16 @@ class ToolRegistry:
 
     def _web_search(self, query: str) -> dict[str, Any]:
         LOGGER.info("Running OpenAI web_search tool for query: %s", query)
+        user_location = build_web_search_user_location(
+            city=self._settings.location_city,
+            region=self._settings.location_region,
+            country_code=self._settings.location_country_code,
+            timezone=self._settings.location_timezone,
+        )
+        tool_config: dict[str, Any] = {"type": "web_search"}
+        if user_location is not None:
+            tool_config["user_location"] = user_location
+
         body = {
             "model": self._settings.web_search_model,
             "input": (
@@ -103,16 +113,7 @@ class ToolRegistry:
                 "Focus on current factual information. Include at most three short sources.\n\n"
                 f"Query: {query}"
             ),
-            "tools": [
-                {
-                    "type": "web_search",
-                    "user_location": {
-                        "type": "approximate",
-                        "country": "US",
-                        "timezone": "America/Chicago",
-                    },
-                }
-            ],
+            "tools": [tool_config],
         }
         req = request.Request(
             url="https://api.openai.com/v1/responses",

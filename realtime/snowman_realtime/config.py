@@ -55,6 +55,7 @@ def build_runtime_instructions(
     system_prompt: str,
     *,
     latest_turn_only: bool = False,
+    location_context: str | None = None,
     now: datetime | None = None,
 ) -> str:
     current_time = (now or datetime.now().astimezone()).replace(microsecond=0)
@@ -69,10 +70,49 @@ def build_runtime_instructions(
         "Use local_time only if you need to re-check the exact current local time because the conversation has been open for a while or the user explicitly wants the precise current time."
     )
 
-    instruction_parts = [system_prompt.strip(), current_time_context, LATEST_INFO_POLICY]
+    instruction_parts = [system_prompt.strip(), current_time_context]
+    if location_context and location_context.strip():
+        instruction_parts.append(location_context.strip())
+    instruction_parts.append(LATEST_INFO_POLICY)
     if latest_turn_only:
         instruction_parts.append(LATEST_TURN_POLICY)
     return "\n\n".join(part for part in instruction_parts if part).strip()
+
+
+def build_location_prompt_context(
+    *,
+    city: str,
+    region: str,
+    country_code: str,
+) -> str:
+    if not city or not region or not country_code:
+        return ""
+    return (
+        f"Default local context for Snowman and the current user: {city}, {region}, {country_code}. "
+        "Use this as the default location for local questions such as weather, nearby places, traffic, commute, and other ambiguous location-dependent requests. "
+        "If the user explicitly names a different place, use the user-provided location instead."
+    )
+
+
+def build_web_search_user_location(
+    *,
+    city: str,
+    region: str,
+    country_code: str,
+    timezone: str,
+) -> dict[str, str] | None:
+    if not city or not region or not country_code:
+        return None
+
+    location = {
+        "type": "approximate",
+        "city": city,
+        "region": region,
+        "country": country_code,
+    }
+    if timezone:
+        location["timezone"] = timezone
+    return location
 
 
 def _get_bool(name: str, default: bool) -> bool:
@@ -104,6 +144,10 @@ class Settings:
     interruption_enabled: bool
     log_level: str
     system_prompt: str
+    location_city: str
+    location_region: str
+    location_country_code: str
+    location_timezone: str
     ready_cue_path: str
     post_reply_cue_path: str
     post_reply_cue_delay_seconds: float
@@ -193,6 +237,13 @@ class Settings:
             interruption_enabled=_get_bool("INTERRUPTION_ENABLED", True),
             log_level=os.getenv("LOG_LEVEL", "INFO").strip().upper(),
             system_prompt=os.getenv("SYSTEM_PROMPT", DEFAULT_SYSTEM_PROMPT).strip(),
+            location_city=os.getenv("LOCATION_CITY", "").strip(),
+            location_region=os.getenv("LOCATION_REGION", "").strip(),
+            location_country_code=os.getenv("LOCATION_COUNTRY_CODE", "").strip(),
+            location_timezone=(
+                os.getenv("LOCATION_TIMEZONE", "").strip()
+                or os.getenv("TZ", "").strip()
+            ),
             ready_cue_path=str(
                 _resolve_path(
                     os.getenv("READY_CUE_PATH", str(DEFAULT_READY_CUE_PATH)).strip()

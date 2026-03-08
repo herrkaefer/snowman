@@ -9,7 +9,7 @@ from collections.abc import Callable
 
 import websocket
 
-from .config import Settings, build_runtime_instructions
+from .config import Settings, build_location_prompt_context, build_runtime_instructions
 from .events import (
     ResponseAudioChunk,
     ResponsePlaybackDone,
@@ -51,11 +51,23 @@ class RealtimeVoiceAgent:
         self._response_text_parts: dict[str, list[str]] = {}
 
     def _session_instructions(self) -> str:
-        return build_runtime_instructions(self._settings.system_prompt)
+        return build_runtime_instructions(
+            self._settings.system_prompt,
+            location_context=build_location_prompt_context(
+                city=self._settings.location_city,
+                region=self._settings.location_region,
+                country_code=self._settings.location_country_code,
+            ),
+        )
 
     def _response_instructions(self) -> str:
         return build_runtime_instructions(
             self._settings.system_prompt,
+            location_context=build_location_prompt_context(
+                city=self._settings.location_city,
+                region=self._settings.location_region,
+                country_code=self._settings.location_country_code,
+            ),
             latest_turn_only=True,
         )
 
