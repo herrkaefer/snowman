@@ -54,6 +54,12 @@ class ResponsePlaybackDone:
 
 
 @dataclass(frozen=True)
+class ResponseDone:
+    response_id: str | None = None
+    tool_call_count: int = 0
+
+
+@dataclass(frozen=True)
 class ToolCallRequested:
     call_id: str
     name: str

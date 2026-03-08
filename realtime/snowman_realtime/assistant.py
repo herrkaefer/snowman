@@ -23,6 +23,7 @@ from .audio import (
 from .config import Settings
 from .events import (
     ResponseAudioChunk,
+    ResponseDone,
     ResponseInterrupted,
     ResponsePlaybackDone,
     ResponseTextDelta,
@@ -457,6 +458,43 @@ class SnowmanRealtimeAssistant:
                     )
                     return
                 LOGGER.info("Response playback done: %s", event.reason)
+                return
+
+            if isinstance(event, ResponseDone):
+                if state is None or not state.reply_expected:
+                    return
+                if event.response_id and event.response_id in interrupted_response_ids:
+                    LOGGER.debug(
+                        "Ignoring response.done from interrupted response: %s",
+                        event.response_id,
+                    )
+                    return
+                if (
+                    event.response_id
+                    and state.active_response_id is not None
+                    and event.response_id != state.active_response_id
+                ):
+                    LOGGER.debug(
+                        "Ignoring response.done from unexpected response: active=%s got=%s",
+                        state.active_response_id,
+                        event.response_id,
+                    )
+                    return
+                if event.tool_call_count > 0:
+                    LOGGER.info(
+                        "Response done with %d tool call(s); waiting for follow-up response",
+                        event.tool_call_count,
+                    )
+                    state.active_response_id = None
+                    state.response_started = False
+                    state.response_complete = False
+                    session_state = self._set_session_state(
+                        session_state,
+                        SessionWindowState.WAITING_FOR_REPLY,
+                        reason="tool_call",
+                    )
+                    return
+                LOGGER.info("Response done without tool calls")
                 state.response_complete = True
                 state.response_done_at = time.monotonic()
                 return
@@ -741,6 +779,18 @@ class SnowmanRealtimeAssistant:
 
             if isinstance(event, ResponsePlaybackDone):
                 LOGGER.info("Response playback done: %s", event.reason)
+                return
+
+            if isinstance(event, ResponseDone):
+                if event.tool_call_count > 0:
+                    LOGGER.info(
+                        "Response done with %d tool call(s); waiting for follow-up response",
+                        event.tool_call_count,
+                    )
+                    response_started = False
+                    response_complete = False
+                    return
+                LOGGER.info("Response done without tool calls")
                 response_complete = True
                 response_done_at = time.monotonic()
                 return

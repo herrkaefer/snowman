@@ -12,6 +12,7 @@ import websocket
 from .config import Settings, build_location_prompt_context, build_runtime_instructions
 from .events import (
     ResponseAudioChunk,
+    ResponseDone,
     ResponsePlaybackDone,
     ResponseTextDelta,
     ResponseTextDone,
@@ -313,10 +314,13 @@ class RealtimeVoiceAgent:
                     )
                 )
                 return
-            self._handle_response_done(message)
+            tool_call_count = self._handle_response_done(message)
             text = self._consume_response_text(response_id)
             if text:
                 self._event_handler(ResponseTextDone(text=text, response_id=response_id))
+            self._event_handler(
+                ResponseDone(response_id=response_id, tool_call_count=tool_call_count)
+            )
             return
 
         if message_type in {
@@ -405,13 +409,14 @@ class RealtimeVoiceAgent:
         response_key = self._response_key(response_id)
         self._response_text_parts.pop(response_key, None)
 
-    def _handle_response_done(self, message: dict[str, object]) -> None:
+    def _handle_response_done(self, message: dict[str, object]) -> int:
         response = message.get("response")
         if not isinstance(response, dict):
-            return
+            return 0
         output = response.get("output")
         if not isinstance(output, list):
-            return
+            return 0
+        tool_call_count = 0
         for item in output:
             if not isinstance(item, dict):
                 continue
@@ -424,6 +429,7 @@ class RealtimeVoiceAgent:
                 continue
             if not isinstance(arguments, str):
                 arguments = json.dumps(arguments)
+            tool_call_count += 1
             self._event_handler(
                 ToolCallRequested(
                     call_id=call_id,
@@ -431,6 +437,7 @@ class RealtimeVoiceAgent:
                     arguments_json=arguments,
                 )
             )
+        return tool_call_count
 
     def _log_message_summary(
         self,
