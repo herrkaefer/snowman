@@ -7,4 +7,4 @@ Type=oneshot
 WorkingDirectory=__REALTIME_DIR__
 Environment=SERVICE_NAME=snowman-realtime.service
 Environment=APP_DIR=__REALTIME_DIR__
-ExecStart=__REALTIME_DIR__/check_realtime_health.sh
+ExecStart=__REALTIME_DIR__/scripts/check_realtime_health.sh

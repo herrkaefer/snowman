@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PYTHON_BIN="${ROOT_DIR}/venv/bin/python3"
-MAIN_PY="${ROOT_DIR}/main.py"
-PATTERN="${ROOT_DIR}/venv/bin/python3 -u ${MAIN_PY}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+APP_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+PYTHON_BIN="${APP_DIR}/venv/bin/python3"
+MAIN_MODULE="snowman_realtime"
+PATTERN="${APP_DIR}/venv/bin/python3 -u -m ${MAIN_MODULE}"
 
 existing_pids="$(pgrep -f "${PATTERN}" || true)"
 if [[ -n "${existing_pids}" ]]; then
@@ -16,4 +17,5 @@ if [[ -n "${existing_pids}" ]]; then
   sleep 0.5
 fi
 
-exec "${PYTHON_BIN}" -u "${MAIN_PY}"
+cd "${APP_DIR}"
+exec "${PYTHON_BIN}" -u -m "${MAIN_MODULE}"

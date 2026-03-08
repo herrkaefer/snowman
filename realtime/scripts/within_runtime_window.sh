@@ -2,15 +2,17 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+APP_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+SYSTEMD_DIR="${APP_DIR}/systemd"
 START_TIMER_PATH="${START_TIMER_PATH:-/etc/systemd/system/snowman-realtime-window-start.timer}"
 STOP_TIMER_PATH="${STOP_TIMER_PATH:-/etc/systemd/system/snowman-realtime-window-stop.timer}"
 
 if [[ ! -f "${START_TIMER_PATH}" ]]; then
-  START_TIMER_PATH="${SCRIPT_DIR}/snowman-realtime-window-start.timer"
+  START_TIMER_PATH="${SYSTEMD_DIR}/snowman-realtime-window-start.timer"
 fi
 
 if [[ ! -f "${STOP_TIMER_PATH}" ]]; then
-  STOP_TIMER_PATH="${SCRIPT_DIR}/snowman-realtime-window-stop.timer"
+  STOP_TIMER_PATH="${SYSTEMD_DIR}/snowman-realtime-window-stop.timer"
 fi
 
 extract_time() {

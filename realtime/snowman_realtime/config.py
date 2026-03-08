@@ -10,11 +10,12 @@ from dotenv import load_dotenv
 
 
 BASE_DIR = Path(__file__).resolve().parents[1]
+AUDIO_DIR = BASE_DIR / "audio"
 DEFAULT_WAKE_WORD_PATH = BASE_DIR / "Snowman_en_raspberry-pi_v4_0_0.ppn"
-DEFAULT_READY_CUE_PATH = BASE_DIR / "ready_cue.wav"
-DEFAULT_FAILURE_CUE_PATH = BASE_DIR / "wake_chime.wav"
-DEFAULT_SESSION_END_CUE_PATH = BASE_DIR / "end_cue.wav"
-DEFAULT_WEB_SEARCH_WAIT_CUE_PATH = BASE_DIR / "soft_piano_loop.wav"
+DEFAULT_READY_CUE_PATH = AUDIO_DIR / "ready_cue.wav"
+DEFAULT_FAILURE_CUE_PATH = AUDIO_DIR / "wake_chime.wav"
+DEFAULT_SESSION_END_CUE_PATH = AUDIO_DIR / "end_cue.wav"
+DEFAULT_WEB_SEARCH_WAIT_CUE_PATH = AUDIO_DIR / "soft_piano_loop.wav"
 DEFAULT_SYSTEM_PROMPT = (
     "Your name is Snowman. You are a concise bilingual voice assistant running on a Raspberry Pi at the user's home. "
     "Voice style: friendly, clear, cheerful, warm, and supportive. "

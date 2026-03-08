@@ -8,10 +8,16 @@ import json
 import logging
 import math
 import struct
+import sys
 import time
 from collections import Counter
+from pathlib import Path
 
 import websocket
+
+APP_DIR = Path(__file__).resolve().parents[1]
+if str(APP_DIR) not in sys.path:
+    sys.path.insert(0, str(APP_DIR))
 
 from snowman_realtime.audio import PCMResampler
 from snowman_realtime.config import Settings, configure_logging

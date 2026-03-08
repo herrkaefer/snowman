@@ -1,7 +1,0 @@
-[Unit]
-Description=Snowman Realtime Health Check
-After=snowman-realtime.service
-
-[Service]
-Type=oneshot
-ExecStart=/home/snowman/voice-assistant-realtime/realtime/check_realtime_health.sh

@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 from snowman_realtime.assistant import SnowmanRealtimeAssistant
 from snowman_realtime.config import Settings, configure_logging
 

@@ -38,10 +38,17 @@ flowchart LR
 Preferred one-command deploy on Raspberry Pi:
 
 ```bash
-./realtime/deploy.sh --host <pi_hostname/ip> --user <username> [--port 22] [--env-file realtime/.env]
+./realtime/scripts/deploy.sh --host <pi_hostname/ip> --user <username> [--port 22] [--env-file realtime/.env]
 ```
 
 This script handles both first install and later redeploys. It syncs the app to `/home/<user>/voice-assistant-realtime/realtime`, refreshes the virtualenv, installs the parameterized systemd units, enables `snowman-realtime.service` and `snowman-realtime-healthcheck.timer`, and restarts the main service.
+
+Directory layout:
+
+- `audio/` stores tracked cue and loop WAV assets
+- `scripts/` stores deploy, runtime, and probe scripts
+- `systemd/` stores deployable unit and timer files
+- `tests/` stores local test utilities and unit tests
 
 1. Create and activate a virtual environment:
 
@@ -74,10 +81,10 @@ cp .env.example .env
 ## Run
 
 ```bash
-./start_realtime.sh
+./scripts/start_realtime.sh
 ```
 
-This wrapper kills any older `main.py` instance first, then starts exactly one foreground process.
+This wrapper kills any older `python3 -m snowman_realtime` instance first, then starts exactly one foreground process.
 
 For routine use on Raspberry Pi, prefer the systemd service instead of manual `nohup`.
 
@@ -117,7 +124,7 @@ Common session-window settings:
 - `SESSION_WINDOW_ENABLED=false` keeps the original single-turn flow
 - `SESSION_FOLLOWUP_TIMEOUT=6.0` controls how long follow-up turns wait for speech
 - `SESSION_MAX_TURNS=0` means unlimited turns until timeout or end phrase
-- `POST_REPLY_CUE_PATH=ready_cue.wav` replays the ready cue after each completed reply by default
+- `POST_REPLY_CUE_PATH=audio/ready_cue.wav` replays the ready cue after each completed reply by default
 
 Optional fixed location settings:
 
@@ -131,25 +138,25 @@ Optional fixed location settings:
 Use the probe script to isolate Realtime connection reliability from the microphone pipeline:
 
 ```bash
-python probe_realtime_connect.py --attempts 20
+python scripts/probe_realtime_connect.py --attempts 20
 ```
 
 To test the next stage as well, including synthetic audio upload and response creation:
 
 ```bash
-python probe_realtime_connect.py --attempts 20 --with-audio
+python scripts/probe_realtime_connect.py --attempts 20 --with-audio
 ```
 
 To approximate the current app's upload style more closely, use chunked upload:
 
 ```bash
-python probe_realtime_connect.py --attempts 20 --with-audio --audio-ms 2500 --upload-mode chunked-burst
+python scripts/probe_realtime_connect.py --attempts 20 --with-audio --audio-ms 2500 --upload-mode chunked-burst
 ```
 
 To compare against a paced upload variant:
 
 ```bash
-python probe_realtime_connect.py --attempts 20 --with-audio --audio-ms 2500 --upload-mode chunked-paced
+python scripts/probe_realtime_connect.py --attempts 20 --with-audio --audio-ms 2500 --upload-mode chunked-paced
 ```
 
 ## Raspberry Pi Notes
@@ -158,9 +165,9 @@ python probe_realtime_connect.py --attempts 20 --with-audio --audio-ms 2500 --up
 - Wake word detection still uses a local `.ppn` file.
 - Wake word sensitivity is controlled by `WAKE_WORD_SENSITIVITY` in the range `0.0` to `1.0`; higher values reduce misses but increase false triggers.
 - The default custom wake word path points to `Snowman_en_raspberry-pi_v4_0_0.ppn` in this directory.
-- The default ready cue uses `ready_cue.wav` in this directory.
-- A post-reply cue can be configured with `POST_REPLY_CUE_PATH`; by default it reuses `ready_cue.wav`.
-- A failure cue can be configured with `FAILURE_CUE_PATH`; by default it uses `wake_chime.wav`.
+- The default ready cue uses `audio/ready_cue.wav`.
+- A post-reply cue can be configured with `POST_REPLY_CUE_PATH`; by default it reuses `audio/ready_cue.wav`.
+- A failure cue can be configured with `FAILURE_CUE_PATH`; by default it uses `audio/wake_chime.wav`.
 - The default playback device is auto-detected and prefers `Google voiceHAT`.
 - The default prompt lives in `snowman_realtime/config.py`; use `.env` overrides only if you intentionally want a custom prompt.
 - The default mode uses manual turn submission to Realtime instead of continuous server VAD.
@@ -206,35 +213,26 @@ The Raspberry Pi deployment now uses:
 - `snowman-realtime-window-stop.service`
 - `snowman-realtime-window-stop.timer`
 
-The main service uses `start_realtime.sh`, so every restart also cleans up any older leftover instance before starting a new one.
+The main service uses `scripts/start_realtime.sh`, so every restart also cleans up any older leftover instance before starting a new one.
 
 ### Install On Raspberry Pi
 
-Copy these files to the Pi and install them as system services:
+Use `./scripts/deploy.sh` for normal installation and redeploys. The always-on service files in `systemd/` are templates and are rendered by the deploy script with the target user and home directory.
+
+If you only need the optional runtime-window timers, install these extra files manually:
 
 ```bash
-sudo install -m 644 snowman-realtime.service /etc/systemd/system/snowman-realtime.service
-sudo install -m 644 snowman-realtime-healthcheck.service /etc/systemd/system/snowman-realtime-healthcheck.service
-sudo install -m 644 snowman-realtime-healthcheck.timer /etc/systemd/system/snowman-realtime-healthcheck.timer
-sudo install -m 755 check_realtime_health.sh /home/snowman/voice-assistant-realtime/realtime/check_realtime_health.sh
-sudo install -m 755 within_runtime_window.sh /home/snowman/voice-assistant-realtime/realtime/within_runtime_window.sh
+sudo install -m 644 systemd/snowman-realtime-window-start.service /etc/systemd/system/snowman-realtime-window-start.service
+sudo install -m 644 systemd/snowman-realtime-window-start.timer /etc/systemd/system/snowman-realtime-window-start.timer
+sudo install -m 644 systemd/snowman-realtime-window-stop.service /etc/systemd/system/snowman-realtime-window-stop.service
+sudo install -m 644 systemd/snowman-realtime-window-stop.timer /etc/systemd/system/snowman-realtime-window-stop.timer
+sudo install -m 755 scripts/within_runtime_window.sh /home/snowman/voice-assistant-realtime/realtime/scripts/within_runtime_window.sh
 sudo systemctl daemon-reload
-sudo systemctl enable --now snowman-realtime.service
-sudo systemctl enable --now snowman-realtime-healthcheck.timer
 ```
 
 ### Schedule A Daily Runtime Window
 
-If you want the assistant to run only during a fixed local-time window, for example `07:30` to `21:30`, install these extra units:
-
-```bash
-sudo install -m 644 snowman-realtime-window-start.service /etc/systemd/system/snowman-realtime-window-start.service
-sudo install -m 644 snowman-realtime-window-start.timer /etc/systemd/system/snowman-realtime-window-start.timer
-sudo install -m 644 snowman-realtime-window-stop.service /etc/systemd/system/snowman-realtime-window-stop.service
-sudo install -m 644 snowman-realtime-window-stop.timer /etc/systemd/system/snowman-realtime-window-stop.timer
-sudo install -m 755 within_runtime_window.sh /home/snowman/voice-assistant-realtime/realtime/within_runtime_window.sh
-sudo systemctl daemon-reload
-```
+If you want the assistant to run only during a fixed local-time window, for example `07:30` to `21:30`, install the timer files above, then switch away from always-on boot startup:
 
 Then switch away from always-on boot startup:
 
@@ -249,7 +247,7 @@ How it works:
 
 - `07:30`: start `snowman-realtime.service` and `snowman-realtime-healthcheck.timer`
 - `21:30`: stop the health-check timer first, then stop the main realtime service
-- outside that window, `within_runtime_window.sh` reads the installed start/stop timers and blocks both service restarts and health-check restarts
+- outside that window, `scripts/within_runtime_window.sh` reads the installed start/stop timers and blocks both service restarts and health-check restarts
 
 The timers use Raspberry Pi local time and set `Persistent=true`, so if the Pi reboots and missed one of the scheduled times, systemd will catch up on the next boot.
 
@@ -281,7 +279,7 @@ tail -f ~/voice-assistant-realtime/realtime/realtime.log
 To verify only one realtime instance is running:
 
 ```bash
-pgrep -af "voice-assistant-realtime/realtime/main.py"
+pgrep -af "python3 -u -m snowman_realtime"
 ```
 
 ### Health Check
@@ -307,5 +305,5 @@ journalctl -u snowman-realtime-healthcheck.service -n 20 --no-pager
 For normal testing on Raspberry Pi:
 
 - use `sudo systemctl restart snowman-realtime`
-- do not start a separate `nohup ./start_realtime.sh`
+- do not start a separate `nohup ./scripts/start_realtime.sh`
 - if you need to play standalone audio samples, stop the service first and start it again after the sample playback

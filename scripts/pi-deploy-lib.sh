@@ -41,6 +41,7 @@ copy_dir_contents_to_remote() {
     --exclude='__pycache__' \
     --exclude='.pytest_cache' \
     --exclude='.DS_Store' \
+    --exclude='._*' \
     --exclude='.env' \
     -C "${src_dir}" \
     -cf - . | ssh_pi "mkdir -p $(quote_remote "${dest_dir}") && tar -xf - -C $(quote_remote "${dest_dir}")"
