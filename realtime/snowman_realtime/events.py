@@ -57,6 +57,8 @@ class ResponsePlaybackDone:
 class ResponseDone:
     response_id: str | None = None
     tool_call_count: int = 0
+    status: str = "completed"
+    reason: str | None = None
 
 
 @dataclass(frozen=True)

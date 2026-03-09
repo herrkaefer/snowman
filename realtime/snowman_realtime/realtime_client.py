@@ -306,7 +306,7 @@ class RealtimeVoiceAgent:
 
         if message_type == "response.done":
             response_status = self._response_status(message.get("response"))
-            if response_status in {"failed", "cancelled", "incomplete"}:
+            if response_status in {"failed", "cancelled"}:
                 self._drop_response_text(response_id)
                 self._event_handler(
                     SessionError(
@@ -314,12 +314,28 @@ class RealtimeVoiceAgent:
                     )
                 )
                 return
+            incomplete_reason = None
+            if response_status == "incomplete":
+                incomplete_reason = self._response_incomplete_reason(message)
+                if incomplete_reason != "max_output_tokens":
+                    self._drop_response_text(response_id)
+                    self._event_handler(
+                        SessionError(
+                            message=self._response_failure_message(message, response_status)
+                        )
+                    )
+                    return
             tool_call_count = self._handle_response_done(message)
             text = self._consume_response_text(response_id)
             if text:
                 self._event_handler(ResponseTextDone(text=text, response_id=response_id))
             self._event_handler(
-                ResponseDone(response_id=response_id, tool_call_count=tool_call_count)
+                ResponseDone(
+                    response_id=response_id,
+                    tool_call_count=tool_call_count,
+                    status=response_status or "completed",
+                    reason=incomplete_reason,
+                )
             )
             return
 
@@ -574,6 +590,23 @@ class RealtimeVoiceAgent:
                 if isinstance(reason, str) and reason:
                     return f"Realtime response {response_status}: {reason}"
         return f"Realtime response {response_status}"
+
+    def _response_incomplete_reason(self, message: dict[str, object]) -> str | None:
+        response = message.get("response")
+        if not isinstance(response, dict):
+            return None
+        status_details = response.get("status_details")
+        if not isinstance(status_details, dict):
+            return None
+        reason = status_details.get("reason")
+        if isinstance(reason, str) and reason:
+            return reason
+        incomplete_details = status_details.get("incomplete_details")
+        if isinstance(incomplete_details, dict):
+            reason = incomplete_details.get("reason")
+            if isinstance(reason, str) and reason:
+                return reason
+        return None
 
     def _transcription_failure_message(self, message: dict[str, object]) -> str:
         error = message.get("error")

@@ -494,7 +494,10 @@ class SnowmanRealtimeAssistant:
                         reason="tool_call",
                     )
                     return
-                LOGGER.info("Response done without tool calls")
+                if event.status == "incomplete" and event.reason == "max_output_tokens":
+                    LOGGER.info("Response truncated at max_output_tokens; treating as soft completion")
+                else:
+                    LOGGER.info("Response done without tool calls")
                 state.response_complete = True
                 state.response_done_at = time.monotonic()
                 return
@@ -790,7 +793,10 @@ class SnowmanRealtimeAssistant:
                     response_started = False
                     response_complete = False
                     return
-                LOGGER.info("Response done without tool calls")
+                if event.status == "incomplete" and event.reason == "max_output_tokens":
+                    LOGGER.info("Response truncated at max_output_tokens; treating as soft completion")
+                else:
+                    LOGGER.info("Response done without tool calls")
                 response_complete = True
                 response_done_at = time.monotonic()
                 return

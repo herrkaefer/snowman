@@ -41,7 +41,12 @@ class RealtimeResponseDoneTests(unittest.TestCase):
         )
         self.assertEqual(
             events[1],
-            ResponseDone(response_id="resp_tool", tool_call_count=1),
+            ResponseDone(
+                response_id="resp_tool",
+                tool_call_count=1,
+                status="completed",
+                reason=None,
+            ),
         )
 
     def test_response_done_without_tool_call_emits_done_event_only(self) -> None:
@@ -66,7 +71,49 @@ class RealtimeResponseDoneTests(unittest.TestCase):
 
         self.assertEqual(
             events,
-            [ResponseDone(response_id="resp_final", tool_call_count=0)],
+            [
+                ResponseDone(
+                    response_id="resp_final",
+                    tool_call_count=0,
+                    status="completed",
+                    reason=None,
+                )
+            ],
+        )
+
+    def test_incomplete_max_output_tokens_emits_soft_done_event(self) -> None:
+        events: list[object] = []
+        agent = RealtimeVoiceAgent(SimpleNamespace(), events.append, tools=[])
+
+        agent._handle_message(
+            {
+                "type": "response.done",
+                "response": {
+                    "id": "resp_truncated",
+                    "status": "incomplete",
+                    "status_details": {
+                        "reason": "max_output_tokens",
+                    },
+                    "output": [
+                        {
+                            "type": "message",
+                            "content": [],
+                        }
+                    ],
+                },
+            }
+        )
+
+        self.assertEqual(
+            events,
+            [
+                ResponseDone(
+                    response_id="resp_truncated",
+                    tool_call_count=0,
+                    status="incomplete",
+                    reason="max_output_tokens",
+                )
+            ],
         )
 
 
