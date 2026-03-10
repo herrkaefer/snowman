@@ -383,7 +383,7 @@ class SnowmanRealtimeAssistant:
         normalized = "".join(ch for ch in transcript.strip().lower() if ch.isalnum())
         if not normalized:
             return False
-        return any(phrase in normalized for phrase in NORMALIZED_END_PHRASES)
+        return normalized in NORMALIZED_END_PHRASES
 
     def _run_session_window(self) -> None:
         session_started_at = time.monotonic()
