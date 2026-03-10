@@ -617,8 +617,7 @@ class SnowmanRealtimeAssistant:
                         "initial_turn_timeout" if turn_index == 1 else "followup_timeout"
                     )
                     LOGGER.info("No utterance captured: %s", timeout_reason)
-                    if turn_index > 1:
-                        play_session_end_cue = True
+                    play_session_end_cue = True
                     session_state = self._set_session_state(
                         session_state,
                         SessionWindowState.SESSION_TIMEOUT,
