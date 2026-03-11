@@ -34,6 +34,7 @@ class ConfigStoreTests(unittest.TestCase):
                         "openai_voice": "shimmer",
                         "system_prompt": "Saved prompt",
                         "location_street": "W Belmont Ave",
+                        "location_country_code": "United States",
                         "wake_word_sensitivity": 0.65,
                         "output_gain": 0.4,
                         "cue_output_gain": 0.7,
@@ -63,6 +64,7 @@ class ConfigStoreTests(unittest.TestCase):
         self.assertEqual(config_values["openai_voice"], "shimmer")
         self.assertEqual(config_values["system_prompt"], "Saved prompt")
         self.assertEqual(config_values["location_street"], "W Belmont Ave")
+        self.assertEqual(config_values["location_country_code"], "US")
         self.assertEqual(config_values["wake_word_sensitivity"], 0.65)
         self.assertEqual(config_values["output_gain"], 0.4)
         self.assertEqual(config_values["cue_output_gain"], 0.7)

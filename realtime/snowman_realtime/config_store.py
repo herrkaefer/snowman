@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from zoneinfo import available_timezones
 
+from .country_data import COUNTRY_OPTIONS
+
 
 APP_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_DATA_DIR = APP_DIR.parent / "data"
@@ -268,9 +270,9 @@ def materialize_config_values(
         ).strip(),
         "location_city": str(config_payload.get("location_city", defaults["location_city"])).strip(),
         "location_region": str(config_payload.get("location_region", defaults["location_region"])).strip(),
-        "location_country_code": str(
+        "location_country_code": _normalized_country_code(
             config_payload.get("location_country_code", defaults["location_country_code"])
-        ).strip(),
+        ),
         "location_timezone": str(
             config_payload.get("location_timezone", defaults["location_timezone"])
         ).strip(),
@@ -404,6 +406,7 @@ def config_values_for_api(payload: dict[str, object]) -> dict[str, object]:
         "provider_options": list(PROVIDER_OPTIONS),
         "openai_realtime_model_options": list(OPENAI_REALTIME_MODEL_OPTIONS),
         "openai_voice_options": list(OPENAI_VOICE_OPTIONS),
+        "country_options": _country_options(),
         "timezone_options": _timezone_options(),
         "advanced": advanced if isinstance(advanced, dict) else dict(DEFAULT_ADVANCED_CONFIG),
     }
@@ -424,7 +427,7 @@ def write_config_files(paths: ConfigPaths, payload: dict[str, object]) -> None:
         "custom_wake_keyword_path": str(payload.get("custom_wake_keyword_path", "")).strip(),
         "location_city": str(payload.get("location_city", "")).strip(),
         "location_region": str(payload.get("location_region", "")).strip(),
-        "location_country_code": str(payload.get("location_country_code", "")).strip(),
+        "location_country_code": _normalized_country_code(payload.get("location_country_code", "")),
         "location_timezone": str(payload.get("location_timezone", "")).strip(),
         "advanced": _normalized_advanced_config(payload.get("advanced", {})),
     }
@@ -550,3 +553,22 @@ def _editable_system_prompt(system_prompt: str) -> str:
 
 def _timezone_options() -> list[str]:
     return [""] + sorted(available_timezones())
+
+
+def _country_options() -> list[dict[str, str]]:
+    return [{"value": "", "label": "Select a country"}] + [
+        {"value": code, "label": name} for code, name in COUNTRY_OPTIONS
+    ]
+
+
+def _normalized_country_code(value: object) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    upper = raw.upper()
+    for code, name in COUNTRY_OPTIONS:
+        if raw == code or upper == code:
+            return code
+        if raw.casefold() == name.casefold():
+            return code
+    return upper

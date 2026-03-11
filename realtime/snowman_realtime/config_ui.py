@@ -435,7 +435,7 @@ HTML_PAGE = """<!doctype html>
           </div>
           <div>
             <label for="location_country_code">Country</label>
-            <input id="location_country_code" type="text" placeholder="US">
+            <select id="location_country_code"></select>
           </div>
           <div>
             <label for="location_timezone">Time Zone</label>
@@ -539,6 +539,9 @@ HTML_PAGE = """<!doctype html>
       });
       renderSelectOptions("openai_realtime_model", config.openai_realtime_model_options || [], config.openai_realtime_model || "");
       renderSelectOptions("openai_voice", config.openai_voice_options || [], config.openai_voice || "");
+      renderSelectOptions("location_country_code", config.country_options || [], config.location_country_code || "", {
+        "": "Select a country"
+      });
       $("agent_name").value = config.agent_name || "Snowman";
       $("system_prompt").value = config.system_prompt || "";
       renderSelectOptions("location_timezone", config.timezone_options || [], config.location_timezone || "", {
@@ -551,7 +554,6 @@ HTML_PAGE = """<!doctype html>
       $("custom_wake_keyword_path").value = config.custom_wake_keyword_path || "";
       $("location_city").value = config.location_city || "";
       $("location_region").value = config.location_region || "";
-      $("location_country_code").value = config.location_country_code || "";
       $("advanced_json").value = JSON.stringify(config.advanced || {}, null, 2);
       $("openai_api_key").value = "";
       $("porcupine_access_key").value = "";
@@ -577,13 +579,15 @@ HTML_PAGE = """<!doctype html>
       const select = $(id);
       const options = Array.isArray(values) ? values : [];
       select.innerHTML = options
-        .map((value) => {
+        .map((item) => {
+          const value = typeof item === "string" ? item : String(item.value || "");
           const selected = value === selectedValue ? " selected" : "";
-          const label = labels[value] || value;
+          const label = typeof item === "string" ? (labels[value] || value) : String(item.label || value);
           return `<option value="${value}"${selected}>${label}</option>`;
         })
         .join("");
-      if (selectedValue && !options.includes(selectedValue)) {
+      const optionValues = options.map((item) => (typeof item === "string" ? item : String(item.value || "")));
+      if (selectedValue && !optionValues.includes(selectedValue)) {
         select.innerHTML += `<option value="${selectedValue}" selected>${selectedValue}</option>`;
       }
       if (!select.value && selectedValue) {
