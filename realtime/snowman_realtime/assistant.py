@@ -240,6 +240,7 @@ class SnowmanRealtimeAssistant:
                 time.sleep(self._settings.auto_trigger_interval_seconds)
 
     def _run_session(self) -> bool:
+        self._tool_registry.reset_session_state()
         if self._settings.session_window_enabled:
             self._run_session_window()
             return False

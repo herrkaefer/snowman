@@ -7,7 +7,12 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from realtime.snowman_realtime.config import build_runtime_instructions
-from realtime.snowman_realtime.config_ui import _memory_payload_for_api, _tool_payload_for_api
+from realtime.snowman_realtime.config_ui import (
+    _memory_payload_for_api,
+    _restore_profile_baseline,
+    _save_profile_baseline,
+    _tool_payload_for_api,
+)
 from realtime.snowman_realtime.memory import (
     MemoryStore,
     MemoryValidationError,
@@ -50,43 +55,30 @@ class MemoryStoreTests(unittest.TestCase):
 
     def test_memory_store_rejects_missing_sections(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            with self.assertRaises(MemoryValidationError):
-                MemoryStore(Path(temp_dir)).update_profile(
-                    "# Profile Memory\n\n## People\n- Daughter: Xiaomi\n"
-                )
+            saved = MemoryStore(Path(temp_dir)).update_profile(
+                "## Family\n- Daughter: Xiaomi\n"
+            )
+            self.assertEqual(saved, "## Family\n- Daughter: Xiaomi\n")
 
-    def test_memory_store_rejects_unexpected_large_shrink(self) -> None:
-        original = (
-            "# Profile Memory\n\n"
-            "## People\n"
-            "- Daughter: Xiaomi\n"
-            "- Son: Leo\n\n"
-            "## Preferences\n"
-            "- Likes short answers.\n"
-            "- Prefers Mandarin.\n\n"
-            "## Household\n"
-            "- Lives in Chicago.\n"
-            "- Uses a Raspberry Pi voice assistant.\n\n"
-            "## Notes\n"
-            "- Stable note one.\n"
-            "- Stable note two.\n"
-        )
-        tiny = (
-            "# Profile Memory\n\n"
-            "## People\n"
-            "- \n\n"
-            "## Preferences\n"
-            "- \n\n"
-            "## Household\n"
-            "- \n\n"
-            "## Notes\n"
-            "- \n"
-        )
+    def test_memory_store_rejects_only_empty_profile(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             store = MemoryStore(Path(temp_dir))
-            store.update_profile(original)
             with self.assertRaises(MemoryValidationError):
-                store.update_profile(tiny)
+                store.update_profile("   \n\n")
+
+    def test_memory_store_can_save_and_restore_baseline(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = MemoryStore(Path(temp_dir))
+            original = "## Family\n- Mira\n"
+            changed = "## Family\n- Mira\n- Maelia\n"
+            store.update_profile(original)
+            store.save_current_as_baseline()
+            store.update_profile(changed)
+
+            restored = store.restore_baseline()
+            self.assertEqual(restored, original)
+            self.assertTrue(store.baseline_exists())
+            self.assertEqual(store.read_profile(), original)
 
 
 class MemoryToolTests(unittest.TestCase):
@@ -132,6 +124,49 @@ class MemoryToolTests(unittest.TestCase):
             self.assertEqual(result["status"], "updated")
             self.assertEqual(result["profile_markdown"], updated.strip() + "\n")
 
+    def test_tool_registry_requires_get_before_update_when_profile_exists(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            settings = SimpleNamespace(
+                memory_enabled=True,
+                memory_dir=temp_dir,
+                openai_api_key="unused",
+                location_city="",
+                location_region="",
+                location_country_code="",
+                location_timezone="",
+                web_search_model="gpt-5.2",
+            )
+            registry = ToolRegistry(settings)
+            initial = (
+                "# Profile Memory\n\n"
+                "## Family\n"
+                "- Mira: daughter, 11 years old\n"
+            )
+            registry.execute(
+                "profile_memory_update",
+                json.dumps({"updated_markdown": initial}),
+            )
+            registry.reset_session_state()
+
+            with self.assertRaises(RuntimeError):
+                registry.execute(
+                    "profile_memory_update",
+                    json.dumps({"updated_markdown": initial + "- Maelia: daughter, 3 years old\n"}),
+                )
+
+            registry.execute("profile_memory_get", "{}")
+            result = json.loads(
+                registry.execute(
+                    "profile_memory_update",
+                    json.dumps(
+                        {
+                            "updated_markdown": initial + "- Maelia: daughter, 3 years old\n"
+                        }
+                    ),
+                )
+            )
+            self.assertEqual(result["status"], "updated")
+
 
 class MemoryPromptTests(unittest.TestCase):
     def test_runtime_instructions_include_memory_index_context(self) -> None:
@@ -162,6 +197,25 @@ class MemoryConfigUITests(unittest.TestCase):
             self.assertIn("# Profile Memory", payload["profile_markdown"])
             self.assertIn("# Memory Index", payload["memory_index_markdown"])
             self.assertIn("- description:", payload["memory_index_markdown"])
+            self.assertFalse(payload["baseline_exists"])
+
+    def test_memory_baseline_api_helpers(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = {
+                "advanced": {
+                    "memory_enabled": True,
+                    "memory_dir": temp_dir,
+                }
+            }
+            store = MemoryStore(Path(temp_dir))
+            store.update_profile("## Family\n- Mira\n")
+
+            saved = _save_profile_baseline(config)
+            self.assertTrue(saved["baseline_exists"])
+
+            store.update_profile("## Family\n- Mira\n- Maelia\n")
+            restored = _restore_profile_baseline(config)
+            self.assertEqual(restored["profile_markdown"], "## Family\n- Mira\n")
 
     def test_tool_payload_for_api_respects_memory_toggle(self) -> None:
         disabled_tools = _tool_payload_for_api({"advanced": {"memory_enabled": False}})

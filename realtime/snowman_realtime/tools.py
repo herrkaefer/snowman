@@ -8,7 +8,7 @@ from typing import Any
 from urllib import error, request
 
 from .config import Settings, build_web_search_user_location
-from .memory import MemoryStore, MemoryValidationError
+from .memory import MemoryStore, MemoryValidationError, default_profile_markdown
 
 
 LOGGER = logging.getLogger(__name__)
@@ -19,6 +19,11 @@ class ToolDefinition:
     name: str
     description: str
     parameters: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class ToolSessionState:
+    profile_loaded: bool = False
 
 
 def build_tool_definitions(*, memory_enabled: bool) -> list[ToolDefinition]:
@@ -60,7 +65,8 @@ def build_tool_definitions(*, memory_enabled: bool) -> list[ToolDefinition]:
                 ToolDefinition(
                     name="profile_memory_get",
                     description=(
-                        "Load the full profile memory document containing stable facts about people, preferences, and household context."
+                        "Load the full profile memory document containing stable facts about people, preferences, and household context. "
+                        "Call this before any profile memory update so you can preserve existing content."
                     ),
                     parameters={
                         "type": "object",
@@ -72,7 +78,8 @@ def build_tool_definitions(*, memory_enabled: bool) -> list[ToolDefinition]:
                     name="profile_memory_update",
                     description=(
                         "Replace the full profile memory document with updated Markdown. "
-                        "Use this after reading the current profile memory when you need to add, correct, or remove stable profile facts."
+                        "You must call profile_memory_get first in the current session, preserve unrelated existing facts, and make only the minimal necessary edit. "
+                        "Do not overwrite the whole document with a single new fact."
                     ),
                     parameters={
                         "type": "object",
@@ -96,6 +103,7 @@ class ToolRegistry:
         self._settings = settings
         memory_enabled = bool(getattr(settings, "memory_enabled", False))
         self._definitions = build_tool_definitions(memory_enabled=memory_enabled)
+        self._session_state = ToolSessionState()
         self._memory_store = (
             MemoryStore.from_path(str(getattr(settings, "memory_dir", "")))
             if memory_enabled
@@ -103,6 +111,9 @@ class ToolRegistry:
         )
         if self._memory_store is not None:
             self._memory_store.ensure_initialized()
+
+    def reset_session_state(self) -> None:
+        self._session_state = ToolSessionState()
 
     @property
     def tools(self) -> list[ToolDefinition]:
@@ -202,6 +213,7 @@ class ToolRegistry:
     def _profile_memory_get(self) -> dict[str, Any]:
         if self._memory_store is None:
             raise RuntimeError("profile memory is not enabled")
+        self._session_state.profile_loaded = True
         return {
             "profile_markdown": self._memory_store.read_profile(),
         }
@@ -209,6 +221,15 @@ class ToolRegistry:
     def _profile_memory_update(self, updated_markdown: str) -> dict[str, Any]:
         if self._memory_store is None:
             raise RuntimeError("profile memory is not enabled")
+        current_profile = self._memory_store.read_profile()
+        if (
+            current_profile.strip()
+            and current_profile.strip() != default_profile_markdown().strip()
+            and not self._session_state.profile_loaded
+        ):
+            raise RuntimeError(
+                "profile_memory_update requires profile_memory_get first in the current session so existing profile content is preserved."
+            )
         try:
             saved = self._memory_store.update_profile(updated_markdown)
         except MemoryValidationError as exc:

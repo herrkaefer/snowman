@@ -2,15 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-import re
-
-
-REQUIRED_PROFILE_SECTIONS = (
-    "People",
-    "Preferences",
-    "Household",
-    "Notes",
-)
 
 
 class MemoryValidationError(RuntimeError):
@@ -22,6 +13,7 @@ class MemoryPaths:
     base_dir: Path
     profile_path: Path
     index_path: Path
+    baseline_path: Path
 
 
 def default_profile_markdown() -> str:
@@ -61,7 +53,8 @@ def render_memory_index_markdown() -> str:
         "- avoid_when: stable fact lookup\n\n"
         "## routing_rules\n"
         "- Use `profile_memory_get` when you need stable facts about the user, family, preferences, or household.\n"
-        "- Use `profile_memory_update` to create or revise stable profile facts.\n"
+        "- Before any `profile_memory_update`, you must call `profile_memory_get` in the current session.\n"
+        "- When updating profile memory, preserve unrelated existing facts and make only the minimal necessary edit.\n"
         "- `recent_conversation` and `schedule` are not available yet.\n"
         "- For current or changing facts, still use `web_search` instead of memory.\n"
     )
@@ -73,6 +66,7 @@ class MemoryStore:
             base_dir=base_dir,
             profile_path=base_dir / "profile.md",
             index_path=base_dir / "MEMORY.md",
+            baseline_path=base_dir / "profile.baseline.md",
         )
 
     @classmethod
@@ -105,6 +99,29 @@ class MemoryStore:
         self._write_text(self._paths.index_path, render_memory_index_markdown())
         return normalized
 
+    def baseline_exists(self) -> bool:
+        self.ensure_initialized()
+        return self._paths.baseline_path.exists()
+
+    def read_baseline(self) -> str:
+        self.ensure_initialized()
+        if not self._paths.baseline_path.exists():
+            raise RuntimeError("No profile baseline has been saved yet.")
+        return self._paths.baseline_path.read_text(encoding="utf-8")
+
+    def save_current_as_baseline(self) -> str:
+        self.ensure_initialized()
+        current = self.read_profile()
+        self._write_text(self._paths.baseline_path, current)
+        return current
+
+    def restore_baseline(self) -> str:
+        self.ensure_initialized()
+        baseline = self.read_baseline()
+        self._write_text(self._paths.profile_path, baseline)
+        self._write_text(self._paths.index_path, render_memory_index_markdown())
+        return baseline
+
     def _write_text(self, path: Path, content: str) -> None:
         normalized = content.replace("\r\n", "\n").strip() + "\n"
         path.write_text(normalized, encoding="utf-8")
@@ -118,36 +135,5 @@ def validate_profile_markdown(
     normalized = updated_markdown.replace("\r\n", "\n").strip()
     if not normalized:
         raise MemoryValidationError("Profile memory cannot be empty.")
-
-    lines = normalized.splitlines()
-    if not lines or lines[0].strip() != "# Profile Memory":
-        raise MemoryValidationError("Profile memory must start with '# Profile Memory'.")
-
-    missing_sections: list[str] = []
-    duplicated_sections: list[str] = []
-    for section in REQUIRED_PROFILE_SECTIONS:
-        matches = re.findall(rf"^## {re.escape(section)}\s*$", normalized, flags=re.MULTILINE)
-        if not matches:
-            missing_sections.append(section)
-        elif len(matches) > 1:
-            duplicated_sections.append(section)
-
-    if missing_sections:
-        raise MemoryValidationError(
-            "Profile memory is missing required sections: " + ", ".join(missing_sections) + "."
-        )
-    if duplicated_sections:
-        raise MemoryValidationError(
-            "Profile memory has duplicate sections: " + ", ".join(duplicated_sections) + "."
-        )
-
-    previous_normalized = previous_markdown.replace("\r\n", "\n").strip()
-    if previous_normalized:
-        old_len = len(previous_normalized)
-        new_len = len(normalized)
-        if old_len >= 80 and new_len < max(40, int(old_len * 0.35)):
-            raise MemoryValidationError(
-                "Profile memory update is unexpectedly short; refusing to replace most of the document."
-            )
 
     return normalized + "\n"

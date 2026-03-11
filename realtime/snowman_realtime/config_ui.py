@@ -593,11 +593,16 @@ HTML_PAGE = """<!doctype html>
         <h2>Memory</h2>
         <p>Inspect and edit profile memory. `MEMORY.md` is generated automatically and shown read-only as the prompt-visible memory index.</p>
         <div id="memory_status" class="hint"></div>
+        <div id="memory_feedback" class="panel hidden"></div>
         <div class="stack">
           <div>
             <div class="field-head">
               <label for="profile_markdown">profile.md</label>
-              <button id="save_profile_memory" class="secondary" type="button">Save</button>
+              <div>
+                <button id="save_profile_memory" class="secondary" type="button">Save</button>
+                <button id="save_profile_baseline" class="secondary" type="button">Save Current As Baseline</button>
+                <button id="restore_profile_baseline" class="secondary" type="button">Restore Baseline</button>
+              </div>
             </div>
             <textarea id="profile_markdown"></textarea>
           </div>
@@ -724,10 +729,21 @@ HTML_PAGE = """<!doctype html>
       $("profile_markdown").value = memory.profile_markdown || "";
       $("memory_index_markdown").value = memory.memory_index_markdown || "";
       $("memory_status").textContent = memory.memory_enabled
-        ? `Memory is enabled. Storage: ${memory.memory_dir}`
-        : `Memory is disabled in runtime config. You can still inspect and edit files here. Storage: ${memory.memory_dir}`;
+        ? `Memory is enabled. Storage: ${memory.memory_dir}. Baseline: ${memory.baseline_exists ? "saved" : "not saved"}.`
+        : `Memory is disabled in runtime config. You can still inspect and edit files here. Storage: ${memory.memory_dir}. Baseline: ${memory.baseline_exists ? "saved" : "not saved"}.`;
       autoGrowProfile();
       autoGrowMemoryIndex();
+    }
+
+    function setMemoryFeedback(text, kind = "") {
+      const node = $("memory_feedback");
+      if (!text) {
+        node.textContent = "";
+        node.className = "panel hidden";
+        return;
+      }
+      node.textContent = text;
+      node.className = "panel" + (kind ? " " + kind : "");
     }
 
     function renderSelectOptions(id, values, selectedValue, labels = {}) {
@@ -811,6 +827,7 @@ HTML_PAGE = """<!doctype html>
       renderStatus(status);
       renderTools(tools.tools);
       populateMemory(memory);
+      setMemoryFeedback("");
       setMessage("Configuration loaded.", "good");
     }
 
@@ -843,6 +860,18 @@ HTML_PAGE = """<!doctype html>
       try {
         $("validate").disabled = true;
         $("apply").disabled = true;
+        $("save_profile_memory").disabled = true;
+        $("save_profile_baseline").disabled = true;
+        $("restore_profile_baseline").disabled = true;
+        $("save_memory_index").disabled = true;
+        const memoryResult = await readJson("/api/memory/profile", {
+          method: "POST",
+          body: JSON.stringify({
+            profile_markdown: $("profile_markdown").value
+          })
+        });
+        populateMemory(memoryResult);
+        setMemoryFeedback("Profile memory saved.", "good");
         renderApplyingStatus();
         setMessage("Applying configuration and restarting realtime service...");
         const result = await readJson("/api/config/apply", {
@@ -856,6 +885,7 @@ HTML_PAGE = """<!doctype html>
         populateMemory(memory);
         setMessage(result.message, "good");
       } catch (error) {
+        setMemoryFeedback(error.message, "warn");
         setMessage(error.message, "warn");
         try {
           const status = await readJson("/api/status");
@@ -865,6 +895,10 @@ HTML_PAGE = """<!doctype html>
       } finally {
         $("validate").disabled = false;
         $("apply").disabled = false;
+        $("save_profile_memory").disabled = false;
+        $("save_profile_baseline").disabled = false;
+        $("restore_profile_baseline").disabled = false;
+        $("save_memory_index").disabled = false;
       }
     }
 
@@ -937,6 +971,7 @@ HTML_PAGE = """<!doctype html>
 
     async function saveProfileMemory() {
       try {
+        $("save_profile_memory").disabled = true;
         const result = await readJson("/api/memory/profile", {
           method: "POST",
           body: JSON.stringify({
@@ -944,22 +979,67 @@ HTML_PAGE = """<!doctype html>
           })
         });
         populateMemory(result);
+        setMemoryFeedback("Profile memory saved.", "good");
         setMessage("Profile memory saved.", "good");
       } catch (error) {
+        setMemoryFeedback(error.message, "warn");
         setMessage(error.message, "warn");
+      } finally {
+        $("save_profile_memory").disabled = false;
+      }
+    }
+
+    async function saveProfileBaseline() {
+      try {
+        $("save_profile_baseline").disabled = true;
+        const result = await readJson("/api/memory/profile/baseline/save", {
+          method: "POST",
+          body: JSON.stringify({})
+        });
+        populateMemory(result);
+        setMemoryFeedback("Profile baseline saved.", "good");
+        setMessage("Profile baseline saved.", "good");
+      } catch (error) {
+        setMemoryFeedback(error.message, "warn");
+        setMessage(error.message, "warn");
+      } finally {
+        $("save_profile_baseline").disabled = false;
+      }
+    }
+
+    async function restoreProfileBaseline() {
+      try {
+        $("restore_profile_baseline").disabled = true;
+        const result = await readJson("/api/memory/profile/baseline/restore", {
+          method: "POST",
+          body: JSON.stringify({})
+        });
+        populateMemory(result);
+        setMemoryFeedback("Profile restored from baseline.", "good");
+        setMessage("Profile restored from baseline.", "good");
+      } catch (error) {
+        setMemoryFeedback(error.message, "warn");
+        setMessage(error.message, "warn");
+      } finally {
+        $("restore_profile_baseline").disabled = false;
       }
     }
 
     async function saveMemoryIndex() {
       try {
+        $("save_memory_index").disabled = true;
         const result = await readJson("/api/memory/index", {
           method: "POST",
           body: JSON.stringify({})
         });
         populateMemory(result);
+        setMemoryFeedback("Memory index regenerated.", "good");
         setMessage("Memory index regenerated.", "good");
       } catch (error) {
+        setMemoryFeedback(error.message, "warn");
         setMessage(error.message, "warn");
+      } finally {
+        $("save_memory_index").disabled = false;
       }
     }
 
@@ -1019,6 +1099,8 @@ HTML_PAGE = """<!doctype html>
     $("tab_tools").addEventListener("click", () => showTab("tools"));
     $("tab_memory").addEventListener("click", () => showTab("memory"));
     $("save_profile_memory").addEventListener("click", saveProfileMemory);
+    $("save_profile_baseline").addEventListener("click", saveProfileBaseline);
+    $("restore_profile_baseline").addEventListener("click", restoreProfileBaseline);
     $("save_memory_index").addEventListener("click", saveMemoryIndex);
     refresh().catch((error) => {
       setMessage(error.message, "warn");
@@ -1101,6 +1183,22 @@ class ConfigUIHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/memory/profile":
             try:
                 result = _update_profile_memory(_load_config(), body)
+            except RuntimeError as exc:
+                self._write_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
+            self._write_json(result)
+            return
+        if parsed.path == "/api/memory/profile/baseline/save":
+            try:
+                result = _save_profile_baseline(_load_config())
+            except RuntimeError as exc:
+                self._write_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
+            self._write_json(result)
+            return
+        if parsed.path == "/api/memory/profile/baseline/restore":
+            try:
+                result = _restore_profile_baseline(_load_config())
             except RuntimeError as exc:
                 self._write_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
                 return
@@ -1271,6 +1369,8 @@ def _memory_payload_for_api(config_payload: dict[str, object]) -> dict[str, obje
         "memory_dir": str(store.paths.base_dir),
         "profile_path": str(store.paths.profile_path),
         "memory_index_path": str(store.paths.index_path),
+        "baseline_path": str(store.paths.baseline_path),
+        "baseline_exists": store.baseline_exists(),
         "profile_markdown": store.read_profile(),
         "memory_index_markdown": store.read_memory_index(),
     }
@@ -1288,6 +1388,18 @@ def _update_profile_memory(
         store.update_profile(profile_markdown)
     except RuntimeError as exc:
         raise RuntimeError(str(exc)) from exc
+    return _memory_payload_for_api(config_payload)
+
+
+def _save_profile_baseline(config_payload: dict[str, object]) -> dict[str, object]:
+    store = _memory_store_for_config(config_payload)
+    store.save_current_as_baseline()
+    return _memory_payload_for_api(config_payload)
+
+
+def _restore_profile_baseline(config_payload: dict[str, object]) -> dict[str, object]:
+    store = _memory_store_for_config(config_payload)
+    store.restore_baseline()
     return _memory_payload_for_api(config_payload)
 
 

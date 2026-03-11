@@ -264,6 +264,7 @@ class ConfigStoreTests(unittest.TestCase):
         self.assertEqual(payload["wake_word_sensitivity"], 0.5)
         self.assertEqual(payload["output_gain"], 0.5)
         self.assertEqual(payload["cue_output_gain"], 0.22)
+        self.assertTrue(payload["advanced"]["memory_enabled"])
 
     def test_legacy_advanced_overrides_default_values_during_migration(self) -> None:
         defaults = default_public_config(default_system_prompt=DEFAULT_SYSTEM_PROMPT)
