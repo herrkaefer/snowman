@@ -11,6 +11,7 @@ from realtime.snowman_realtime.config import DEFAULT_SYSTEM_PROMPT, Settings
 from realtime.snowman_realtime.config_store import (
     ConfigPaths,
     config_updates_from_legacy_env,
+    config_values_for_api,
     default_public_config,
     load_config_values,
     merge_config_values,
@@ -204,6 +205,36 @@ class ConfigStoreTests(unittest.TestCase):
         self.assertEqual(config_payload["custom_wake_keyword_path"], "/tmp/custom.ppn")
         self.assertEqual(secrets_payload["openai_api_key"], "test-openai")
         self.assertEqual(secrets_payload["admin_password"], "admin-pass")
+
+    def test_config_values_for_api_exposes_audio_device_settings(self) -> None:
+        payload = config_values_for_api(
+            {
+                "agent_name": "Juniper",
+                "provider": "openai",
+                "openai_realtime_model": "gpt-realtime",
+                "openai_voice": "marin",
+                "system_prompt": "Prompt",
+                "location_street": "",
+                "wake_word_sensitivity": 0.6,
+                "output_gain": 0.35,
+                "cue_output_gain": 0.78,
+                "custom_wake_keyword_path": "",
+                "location_city": "Chicago",
+                "location_region": "IL",
+                "location_country_code": "US",
+                "location_timezone": "America/Chicago",
+                "openai_api_key": "test-openai",
+                "porcupine_access_key": "test-porcupine",
+                "admin_password": "",
+                "advanced": {
+                    "audio_device_index": 4,
+                    "playback_device": "plughw:2,0",
+                },
+            }
+        )
+
+        self.assertEqual(payload["audio_device_index"], 4)
+        self.assertEqual(payload["playback_device"], "plughw:2,0")
 
     def test_config_updates_from_legacy_env_parses_advanced_values(self) -> None:
         updates = config_updates_from_legacy_env(

@@ -10,6 +10,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
+from .audio import (
+    list_input_devices,
+    list_playback_devices,
+    play_speaker_test,
+    resolve_input_device_index,
+    resolve_playback_device,
+    sample_microphone_level,
+)
 from .config import DEFAULT_SYSTEM_PROMPT
 from .config_store import (
     ConfigPaths,
@@ -299,6 +307,30 @@ HTML_PAGE = """<!doctype html>
       margin-top: 0;
       min-width: 82px;
     }
+    .device-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: start;
+    }
+    .device-row button {
+      margin-top: 0;
+      min-width: 140px;
+    }
+    .test-result {
+      margin-top: -8px;
+      margin-bottom: 14px;
+      min-height: 22px;
+      color: var(--muted);
+      font-size: 0.85rem;
+      line-height: 1.45;
+    }
+    .test-result.good {
+      color: var(--good);
+    }
+    .test-result.warn {
+      color: var(--warn);
+    }
     .hint {
       margin-top: -8px;
       margin-bottom: 14px;
@@ -354,6 +386,7 @@ HTML_PAGE = """<!doctype html>
       .status-bar { flex-direction: column; }
       .actions { justify-content: flex-start; }
       .file-row { grid-template-columns: 1fr; }
+      .device-row { grid-template-columns: 1fr; }
       .split-fields { grid-template-columns: 1fr; }
       .quad-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       #system_prompt { min-height: 480px; }
@@ -477,6 +510,27 @@ HTML_PAGE = """<!doctype html>
         <input id="cue_output_gain" type="number" min="0" step="0.05" placeholder="0.22">
         <div class="hint">Controls short cue sounds such as ready and end chimes. `1.0` is original volume. Recommended: `0.2` to `1.2`.</div>
       </section>
+
+      <section class="card">
+        <h2>Audio Devices</h2>
+        <p>Choose which microphone and speaker Snowman should use. These can be different devices.</p>
+
+        <label for="audio_device_index">Microphone Input</label>
+        <div class="device-row">
+          <select id="audio_device_index"></select>
+          <button id="test_microphone" class="secondary" type="button">Test Microphone</button>
+        </div>
+        <div class="hint">The microphone test records a short sample and reports the input level it detects.</div>
+        <div id="test_microphone_result" class="test-result"></div>
+
+        <label for="playback_device">Speaker Output</label>
+        <div class="device-row">
+          <select id="playback_device"></select>
+          <button id="test_speaker" class="secondary" type="button">Test Speaker</button>
+        </div>
+        <div class="hint">The speaker test plays a short cue through the selected output device.</div>
+        <div id="test_speaker_result" class="test-result"></div>
+      </section>
     </div>
 
     <div id="panel_advanced" class="grid hidden">
@@ -512,6 +566,11 @@ HTML_PAGE = """<!doctype html>
         setMessage("Advanced settings JSON must be an object.", "warn");
         return null;
       }
+      advanced.audio_device_index = Number.parseInt($("audio_device_index").value || "-1", 10);
+      if (Number.isNaN(advanced.audio_device_index)) {
+        advanced.audio_device_index = -1;
+      }
+      advanced.playback_device = $("playback_device").value || "auto";
       return {
         agent_name: $("agent_name").value,
         provider: $("provider").value,
@@ -539,6 +598,8 @@ HTML_PAGE = """<!doctype html>
       });
       renderSelectOptions("openai_realtime_model", config.openai_realtime_model_options || [], config.openai_realtime_model || "");
       renderSelectOptions("openai_voice", config.openai_voice_options || [], config.openai_voice || "");
+      renderSelectOptions("audio_device_index", config.audio_input_options || [], String(config.audio_device_index ?? -1));
+      renderSelectOptions("playback_device", config.audio_output_options || [], config.playback_device || "auto");
       renderSelectOptions("location_country_code", config.country_options || [], config.location_country_code || "", {
         "": "Select a country"
       });
@@ -558,6 +619,8 @@ HTML_PAGE = """<!doctype html>
       $("openai_api_key").value = "";
       $("porcupine_access_key").value = "";
       $("wake_word_model").value = "";
+      setTestResult("test_microphone_result", "");
+      setTestResult("test_speaker_result", "");
       setSecretState(
         "openai_api_key",
         config.openai_api_key_configured,
@@ -603,6 +666,12 @@ HTML_PAGE = """<!doctype html>
       hint.textContent = configured
         ? `Saved key: ${maskedValue}. Leave blank to keep it.`
         : "No key saved yet.";
+    }
+
+    function setTestResult(id, text, kind = "") {
+      const node = $(id);
+      node.textContent = text;
+      node.className = "test-result" + (kind ? " " + kind : "");
     }
 
     function renderStatus(status) {
@@ -730,6 +799,43 @@ HTML_PAGE = """<!doctype html>
       }
     }
 
+    async function testSpeaker() {
+      const payload = payloadFromForm();
+      if (!payload) {
+        return;
+      }
+      setTestResult("test_speaker_result", "Playing test sound...", "");
+      try {
+        const result = await readJson("/api/audio-test/speaker", {
+          method: "POST",
+          body: JSON.stringify(payload)
+        });
+        setTestResult("test_speaker_result", result.message || "Speaker test played.", "good");
+      } catch (error) {
+        setTestResult("test_speaker_result", error.message, "warn");
+      }
+    }
+
+    async function testMicrophone() {
+      const payload = payloadFromForm();
+      if (!payload) {
+        return;
+      }
+      setTestResult("test_microphone_result", "Listening for microphone input...", "");
+      try {
+        const result = await readJson("/api/audio-test/microphone", {
+          method: "POST",
+          body: JSON.stringify(payload)
+        });
+        const message = result.detected_sound
+          ? `Detected microphone input on ${result.device_name}. Peak level: ${result.peak_rms}.`
+          : `Microphone opened on ${result.device_name}, but input stayed quiet. Peak level: ${result.peak_rms}.`;
+        setTestResult("test_microphone_result", message, result.detected_sound ? "good" : "warn");
+      } catch (error) {
+        setTestResult("test_microphone_result", error.message, "warn");
+      }
+    }
+
     function autoGrowPrompt() {
       const textarea = $("system_prompt");
       textarea.style.height = "auto";
@@ -756,6 +862,8 @@ HTML_PAGE = """<!doctype html>
     $("validate").addEventListener("click", validateConfig);
     $("apply").addEventListener("click", applyConfig);
     $("upload_wake_word_model").addEventListener("click", uploadWakeWordModel);
+    $("test_speaker").addEventListener("click", testSpeaker);
+    $("test_microphone").addEventListener("click", testMicrophone);
     $("system_prompt").addEventListener("input", autoGrowPrompt);
     $("advanced_json").addEventListener("input", autoGrowAdvanced);
     $("tab_basic").addEventListener("click", () => showTab("basic"));
@@ -789,7 +897,7 @@ class ConfigUIHandler(BaseHTTPRequestHandler):
             self._write_asset(ASSETS_DIR / "snowman_retro.svg", "image/svg+xml")
             return
         if parsed.path == "/api/config":
-            self._write_json({"config": config_values_for_api(_load_config())})
+            self._write_json({"config": _config_payload_for_api(_load_config())})
             return
         if parsed.path == "/api/setup-state":
             self._write_json(_status_payload())
@@ -813,6 +921,24 @@ class ConfigUIHandler(BaseHTTPRequestHandler):
                 self._write_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
                 return
             self._write_json(upload_result)
+            return
+
+        if parsed.path == "/api/audio-test/speaker":
+            try:
+                result = _test_speaker(body)
+            except RuntimeError as exc:
+                self._write_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
+            self._write_json(result)
+            return
+
+        if parsed.path == "/api/audio-test/microphone":
+            try:
+                result = _test_microphone(body)
+            except RuntimeError as exc:
+                self._write_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
+            self._write_json(result)
             return
 
         merged = merge_config_values(_load_config(), body)
@@ -847,7 +973,7 @@ class ConfigUIHandler(BaseHTTPRequestHandler):
             self._write_json(
                 {
                     "message": self.server.last_apply_message,
-                    "config": config_values_for_api(_load_config()),
+                    "config": _config_payload_for_api(_load_config()),
                     "status": _status_payload(last_apply_message=self.server.last_apply_message),
                 }
             )
@@ -936,6 +1062,13 @@ def _load_config() -> dict[str, object]:
     return load_config_values(default_system_prompt=DEFAULT_SYSTEM_PROMPT)
 
 
+def _config_payload_for_api(config_payload: dict[str, object]) -> dict[str, object]:
+    payload = config_values_for_api(config_payload)
+    payload["audio_input_options"] = _audio_input_options()
+    payload["audio_output_options"] = _audio_output_options()
+    return payload
+
+
 def _status_payload(
     *,
     config_payload: dict[str, object] | None = None,
@@ -1000,6 +1133,62 @@ def _apply_config(payload: dict[str, object]) -> None:
     if result.returncode != 0:
         stderr = (result.stderr or result.stdout or "").strip()
         raise RuntimeError(stderr or "Failed to apply configuration")
+
+
+def _audio_input_options() -> list[dict[str, str]]:
+    options = [{"value": "-1", "label": "Auto"}]
+    options.extend(list_input_devices())
+    return options
+
+
+def _audio_output_options() -> list[dict[str, str]]:
+    options = [{"value": "auto", "label": "Auto"}]
+    options.extend(list_playback_devices())
+    return options
+
+
+def _test_speaker(payload: dict[str, object]) -> dict[str, object]:
+    merged = merge_config_values(_load_config(), payload)
+    advanced = merged.get("advanced", {})
+    if not isinstance(advanced, dict):
+        advanced = {}
+    playback_device = str(advanced.get("playback_device", "auto")).strip() or "auto"
+    resolved_device = resolve_playback_device(playback_device)
+    raw_cue_path = str(advanced.get("ready_cue_path", APP_DIR / "audio" / "ready_cue.wav")).strip()
+    cue_path = str((APP_DIR / raw_cue_path).resolve()) if raw_cue_path and not Path(raw_cue_path).is_absolute() else raw_cue_path
+    try:
+        play_speaker_test(
+            sample_rate=int(advanced.get("realtime_sample_rate", 24000)),
+            playback_device=resolved_device,
+            cue_path=cue_path,
+            gain=float(merged.get("cue_output_gain", 0.5)),
+        )
+    except Exception as exc:
+        raise RuntimeError(f"Speaker test failed: {exc}") from exc
+    return {
+        "message": f"Played a short test sound on {resolved_device or 'the default speaker output'}.",
+        "playback_device": resolved_device or "default",
+    }
+
+
+def _test_microphone(payload: dict[str, object]) -> dict[str, object]:
+    merged = merge_config_values(_load_config(), payload)
+    advanced = merged.get("advanced", {})
+    if not isinstance(advanced, dict):
+        advanced = {}
+    try:
+        configured_index = int(advanced.get("audio_device_index", -1))
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("Microphone input selection is invalid.") from exc
+    try:
+        result = sample_microphone_level(
+            device_index=resolve_input_device_index(configured_index),
+            frame_length=int(advanced.get("input_frame_length", 512)),
+            duration_seconds=1.5,
+        )
+    except Exception as exc:
+        raise RuntimeError(f"Microphone test failed: {exc}") from exc
+    return result
 
 
 def _store_wake_word_model(payload: dict[str, object]) -> dict[str, object]:

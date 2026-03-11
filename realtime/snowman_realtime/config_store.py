@@ -342,6 +342,18 @@ def validate_config_values(payload: dict[str, object]) -> list[str]:
             + "."
         )
 
+    advanced = payload.get("advanced", {})
+    if isinstance(advanced, dict):
+        audio_device_index = advanced.get("audio_device_index", -1)
+        try:
+            int(audio_device_index)
+        except (TypeError, ValueError):
+            errors.append("Microphone input must be a valid device selection.")
+
+        playback_device = str(advanced.get("playback_device", "auto")).strip()
+        if not playback_device:
+            errors.append("Speaker output must be a valid device selection.")
+
     try:
         wake_word_sensitivity = float(payload.get("wake_word_sensitivity", 0.5))
     except (TypeError, ValueError):
@@ -385,6 +397,8 @@ def config_values_for_api(payload: dict[str, object]) -> dict[str, object]:
         "provider": payload["provider"],
         "openai_realtime_model": payload["openai_realtime_model"],
         "openai_voice": payload["openai_voice"],
+        "audio_device_index": int(advanced.get("audio_device_index", -1)),
+        "playback_device": str(advanced.get("playback_device", "auto")).strip() or "auto",
         "system_prompt": _editable_system_prompt(str(payload["system_prompt"])),
         "location_street": payload["location_street"],
         "wake_word_sensitivity": payload["wake_word_sensitivity"],

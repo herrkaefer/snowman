@@ -135,7 +135,7 @@ def resolve_input_device_index(configured_index: int) -> int:
     if configured_index >= 0:
         return configured_index
 
-    devices = PvRecorder.get_available_devices()
+    devices = _safe_input_device_names()
     preferred_markers = ("google voicehat", "voicehat", "microphone", "mic", "usb")
 
     for index, name in enumerate(devices):
@@ -152,6 +152,30 @@ def resolve_playback_device(configured_device: str) -> str | None:
     if configured_device and configured_device != "auto":
         return configured_device
 
+    preferred_markers = ("google voicehat", "voicehat", "usb", "speaker")
+    for option in list_playback_devices():
+        normalized = option["label"].lower()
+        if not any(marker in normalized for marker in preferred_markers):
+            continue
+        device = option["value"]
+        LOGGER.info("Auto-selected playback device %s from line: %s", device, option["label"])
+        return device
+
+    LOGGER.info("No preferred playback device found; using ALSA default output")
+    return None
+
+
+def list_input_devices() -> list[dict[str, str]]:
+    names = _safe_input_device_names()
+    filtered = _filtered_input_device_entries(names)
+    entries = filtered or list(enumerate(names))
+    return [
+        {"value": str(index), "label": name}
+        for index, name in entries
+    ]
+
+
+def list_playback_devices() -> list[dict[str, str]]:
     try:
         result = subprocess.run(
             ["aplay", "-l"],
@@ -162,21 +186,124 @@ def resolve_playback_device(configured_device: str) -> str | None:
         )
     except Exception:
         LOGGER.info("Could not inspect playback devices; using ALSA default output")
-        return None
+        return []
+    return _parse_playback_device_lines(result.stdout)
 
-    preferred_markers = ("google voicehat", "voicehat", "usb", "speaker")
-    for line in result.stdout.splitlines():
-        normalized = line.lower()
-        if not any(marker in normalized for marker in preferred_markers):
-            continue
+
+def play_speaker_test(
+    *,
+    sample_rate: int,
+    playback_device: str | None,
+    cue_path: str | Path | None,
+    gain: float,
+) -> None:
+    player = RawAplayPlayer(
+        sample_rate=sample_rate,
+        playback_device=playback_device,
+        output_gain=1.0,
+    )
+    try:
+        if cue_path and Path(cue_path).exists():
+            player.play_wav_file(cue_path, blocking=True, gain=gain)
+            return
+        player.play(generate_sine_pcm(sample_rate=sample_rate, duration_ms=700, amplitude=1400, frequency_hz=660.0))
+        player.drain()
+    finally:
+        player.close()
+
+
+def sample_microphone_level(
+    *,
+    device_index: int,
+    frame_length: int,
+    duration_seconds: float = 1.5,
+) -> dict[str, object]:
+    stream = MicrophoneStream(device_index=device_index, frame_length=frame_length)
+    peak_rms = 0
+    total_rms = 0
+    frame_count = 0
+    started_at = time.monotonic()
+    try:
+        stream.start()
+        while time.monotonic() - started_at < duration_seconds:
+            frame = stream.read_frame_bytes()
+            rms = audioop.rms(frame, 2)
+            peak_rms = max(peak_rms, rms)
+            total_rms += rms
+            frame_count += 1
+    finally:
+        stream.stop()
+    average_rms = 0 if frame_count == 0 else total_rms / frame_count
+    return {
+        "device_name": stream.selected_device_name or f"device_index={device_index}",
+        "peak_rms": peak_rms,
+        "average_rms": round(average_rms, 1),
+        "detected_sound": peak_rms >= 45,
+        "duration_seconds": duration_seconds,
+    }
+
+
+def _safe_input_device_names() -> list[str]:
+    try:
+        return list(PvRecorder.get_available_devices())
+    except Exception:
+        LOGGER.info("Could not inspect input devices", exc_info=True)
+        return []
+
+
+def _parse_playback_device_lines(stdout: str) -> list[dict[str, str]]:
+    options: list[dict[str, str]] = []
+    for line in stdout.splitlines():
         match = re.search(r"card (\d+): .*device (\d+):", line)
-        if match:
-            device = f"plughw:{match.group(1)},{match.group(2)}"
-            LOGGER.info("Auto-selected playback device %s from line: %s", device, line.strip())
-            return device
+        if not match:
+            continue
+        options.append(
+            {
+                "value": f"plughw:{match.group(1)},{match.group(2)}",
+                "label": line.strip(),
+            }
+        )
+    return options
 
-    LOGGER.info("No preferred playback device found; using ALSA default output")
-    return None
+
+def _filtered_input_device_entries(names: list[str]) -> list[tuple[int, str]]:
+    hidden_markers = (
+        "discard all samples",
+        "default audio device",
+        "rate converter plugin",
+        "jack audio connection kit",
+        "open sound system",
+        "pulseaudio sound server",
+        "plugin using speex dsp",
+        "plugin for channel upmix",
+        "plugin for channel downmix",
+    )
+    preferred_markers = (
+        "voicehat",
+        "microphone",
+        "mic",
+        "usb",
+        "snd_",
+        "soundcard",
+        "webcam",
+        "input",
+    )
+
+    filtered: list[tuple[int, str]] = []
+    seen_labels: set[str] = set()
+    for index, name in enumerate(names):
+        normalized = name.strip().lower()
+        if not normalized:
+            continue
+        if any(marker in normalized for marker in hidden_markers):
+            continue
+        if preferred_markers and not any(marker in normalized for marker in preferred_markers):
+            continue
+        if normalized in seen_labels:
+            continue
+        seen_labels.add(normalized)
+        filtered.append((index, name))
+    return filtered
 
 
 class MicrophoneStream:
@@ -219,6 +346,12 @@ class MicrophoneStream:
         self._recorder.delete()
         self._recorder = None
         LOGGER.info("Microphone stopped")
+
+    @property
+    def selected_device_name(self) -> str:
+        if self._recorder is None:
+            return ""
+        return str(self._recorder.selected_device)
 
 
 class RawAplayPlayer:
