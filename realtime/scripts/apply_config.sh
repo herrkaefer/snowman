@@ -12,7 +12,7 @@ SYSTEMCTL_BIN="$(command -v systemctl)"
 
 usage() {
   cat <<'EOF'
-Usage: apply_managed_config.sh --config <config.json> --secrets <secrets.env>
+Usage: apply_config.sh --config <config.json> --secrets <secrets.json>
 EOF
 }
 
@@ -46,10 +46,10 @@ done
 mkdir -p "${DATA_DIR}" "${DATA_DIR}/backups"
 
 TARGET_CONFIG="${DATA_DIR}/config.json"
-TARGET_SECRETS="${DATA_DIR}/secrets.env"
+TARGET_SECRETS="${DATA_DIR}/secrets.json"
 TIMESTAMP="$(date +%Y%m%d%H%M%S)"
 BACKUP_CONFIG="${DATA_DIR}/backups/config-${TIMESTAMP}.json"
-BACKUP_SECRETS="${DATA_DIR}/backups/secrets-${TIMESTAMP}.env"
+BACKUP_SECRETS="${DATA_DIR}/backups/secrets-${TIMESTAMP}.json"
 
 if [[ -f "${TARGET_CONFIG}" ]]; then
   cp "${TARGET_CONFIG}" "${BACKUP_CONFIG}"

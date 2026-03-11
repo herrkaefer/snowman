@@ -1,14 +1,11 @@
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from dotenv import dotenv_values
-
-from .managed_config import load_editable_config
+from .config_store import load_config_values
 
 
 BASE_DIR = Path(__file__).resolve().parents[1]
@@ -49,6 +46,10 @@ LATEST_TURN_POLICY = (
     "Do not greet, welcome, or introduce yourself. "
     "Answer only the user's most recent utterance."
 )
+
+
+class ConfigError(RuntimeError):
+    """Raised when Snowman cannot start because required config is missing or invalid."""
 
 
 def build_runtime_instructions(
@@ -192,164 +193,114 @@ class Settings:
 
     @classmethod
     def load(cls) -> "Settings":
-        env_values = _load_env_values()
-        editable_config = load_editable_config(
-            default_system_prompt=DEFAULT_SYSTEM_PROMPT,
-            env_values=env_values,
-        )
+        config_values = load_config_values(default_system_prompt=DEFAULT_SYSTEM_PROMPT)
+        advanced = config_values["advanced"]
+        assert isinstance(advanced, dict)
 
-        provider = str(editable_config["provider"]).strip().lower()
+        provider = str(config_values["provider"]).strip().lower()
         if provider != "openai":
-            raise RuntimeError(f"Unsupported provider {provider!r}; only 'openai' is implemented")
+            raise ConfigError(
+                f"Unsupported provider {provider!r}; only 'openai' is implemented"
+            )
 
-        openai_api_key = str(editable_config["openai_api_key"]).strip()
+        openai_api_key = str(config_values["openai_api_key"]).strip()
         if not openai_api_key:
-            raise RuntimeError("OPENAI_API_KEY is required in managed config or realtime/.env")
+            raise ConfigError("OPENAI_API_KEY is required in config.json and secrets.json")
 
-        porcupine_access_key = str(editable_config["porcupine_access_key"]).strip()
+        porcupine_access_key = str(config_values["porcupine_access_key"]).strip()
         if not porcupine_access_key:
-            raise RuntimeError("PORCUPINE_ACCESS_KEY is required in managed config or realtime/.env")
+            raise ConfigError("PORCUPINE_ACCESS_KEY is required in config.json and secrets.json")
 
         return cls(
             provider=provider,
             openai_api_key=openai_api_key,
-            openai_realtime_url=_get_str(
-                env_values,
-                "OPENAI_REALTIME_URL", "wss://api.openai.com/v1/realtime"
-            ),
-            openai_realtime_model=_get_str(
-                env_values, "OPENAI_REALTIME_MODEL", "gpt-realtime-mini"
-            ),
-            openai_voice=str(editable_config["openai_voice"]).strip(),
-            input_transcription_model=_get_str(
-                env_values,
-                "INPUT_TRANSCRIPTION_MODEL", "gpt-4o-mini-transcribe"
-            ),
-            openai_beta_header=_get_str(env_values, "OPENAI_BETA_HEADER", "realtime=v1"),
+            openai_realtime_url=_get_str(advanced, "openai_realtime_url", "wss://api.openai.com/v1/realtime"),
+            openai_realtime_model=_get_str(advanced, "openai_realtime_model", "gpt-realtime"),
+            openai_voice=str(config_values["openai_voice"]).strip(),
+            input_transcription_model=_get_str(advanced, "input_transcription_model", "gpt-4o-mini-transcribe"),
+            openai_beta_header=_get_str(advanced, "openai_beta_header", "realtime=v1"),
             porcupine_access_key=porcupine_access_key,
             custom_wake_keyword_path=str(
                 _resolve_path(
-                    _get_str(env_values, "CUSTOM_WAKE_KEYWORD_PATH", str(DEFAULT_WAKE_WORD_PATH))
+                    str(config_values["custom_wake_keyword_path"]).strip()
+                    or str(DEFAULT_WAKE_WORD_PATH)
                 )
             ),
-            wake_word_sensitivity=_get_float(env_values, "WAKE_WORD_SENSITIVITY", 0.5),
-            audio_device_index=_get_int(env_values, "AUDIO_DEVICE_INDEX", -1),
-            input_frame_length=_get_int(env_values, "INPUT_FRAME_LENGTH", 512),
-            input_sample_rate=_get_int(env_values, "INPUT_SAMPLE_RATE", 16000),
-            realtime_sample_rate=_get_int(env_values, "REALTIME_SAMPLE_RATE", 24000),
-            session_idle_timeout=_get_float(env_values, "SESSION_IDLE_TIMEOUT", 20.0),
-            session_window_enabled=bool(editable_config["session_window_enabled"]),
-            session_followup_timeout=_get_float(env_values, "SESSION_FOLLOWUP_TIMEOUT", 6.0),
-            session_max_turns=_get_int(env_values, "SESSION_MAX_TURNS", 0),
-            interruption_enabled=_get_bool(env_values, "INTERRUPTION_ENABLED", True),
-            log_level=_get_str(env_values, "LOG_LEVEL", "INFO").upper(),
-            system_prompt=str(editable_config["system_prompt"]).strip(),
-            location_city=str(editable_config["location_city"]).strip(),
-            location_region=str(editable_config["location_region"]).strip(),
-            location_country_code=str(editable_config["location_country_code"]).strip(),
-            location_timezone=(
-                str(editable_config["location_timezone"]).strip()
-                or _get_str(env_values, "TZ", "")
-            ),
+            wake_word_sensitivity=_get_float(advanced, "wake_word_sensitivity", 0.5),
+            audio_device_index=_get_int(advanced, "audio_device_index", -1),
+            input_frame_length=_get_int(advanced, "input_frame_length", 512),
+            input_sample_rate=_get_int(advanced, "input_sample_rate", 16000),
+            realtime_sample_rate=_get_int(advanced, "realtime_sample_rate", 24000),
+            session_idle_timeout=_get_float(advanced, "session_idle_timeout", 20.0),
+            session_window_enabled=True,
+            session_followup_timeout=_get_float(advanced, "session_followup_timeout", 6.0),
+            session_max_turns=_get_int(advanced, "session_max_turns", 0),
+            interruption_enabled=_get_bool(advanced, "interruption_enabled", True),
+            log_level=_get_str(advanced, "log_level", "INFO").upper(),
+            system_prompt=str(config_values["system_prompt"]).strip(),
+            location_city=str(config_values["location_city"]).strip(),
+            location_region=str(config_values["location_region"]).strip(),
+            location_country_code=str(config_values["location_country_code"]).strip(),
+            location_timezone=str(config_values["location_timezone"]).strip(),
             ready_cue_path=str(
                 _resolve_path(
-                    _get_str(env_values, "READY_CUE_PATH", str(DEFAULT_READY_CUE_PATH))
+                    _get_str(advanced, "ready_cue_path", str(DEFAULT_READY_CUE_PATH))
                 )
             ),
             post_reply_cue_path=_resolve_optional_path(
-                _get_str(env_values, "POST_REPLY_CUE_PATH", str(DEFAULT_READY_CUE_PATH))
+                _get_str(advanced, "post_reply_cue_path", str(DEFAULT_READY_CUE_PATH))
             ),
-            post_reply_cue_delay_seconds=_get_float(
-                env_values, "POST_REPLY_CUE_DELAY_SECONDS", 0.15
-            ),
+            post_reply_cue_delay_seconds=_get_float(advanced, "post_reply_cue_delay_seconds", 0.15),
             failure_cue_path=_resolve_optional_path(
-                _get_str(env_values, "FAILURE_CUE_PATH", str(DEFAULT_FAILURE_CUE_PATH))
+                _get_str(advanced, "failure_cue_path", str(DEFAULT_FAILURE_CUE_PATH))
             ),
             session_end_cue_path=_resolve_optional_path(
-                _get_str(env_values, "SESSION_END_CUE_PATH", str(DEFAULT_SESSION_END_CUE_PATH))
+                _get_str(advanced, "session_end_cue_path", str(DEFAULT_SESSION_END_CUE_PATH))
             ),
-            web_search_wait_cue_enabled=_get_bool(
-                env_values, "WEB_SEARCH_WAIT_CUE_ENABLED", True
-            ),
+            web_search_wait_cue_enabled=_get_bool(advanced, "web_search_wait_cue_enabled", True),
             web_search_wait_cue_path=_resolve_optional_path(
-                _get_str(
-                    env_values,
-                    "WEB_SEARCH_WAIT_CUE_PATH",
-                    str(DEFAULT_WEB_SEARCH_WAIT_CUE_PATH),
-                )
+                _get_str(advanced, "web_search_wait_cue_path", str(DEFAULT_WEB_SEARCH_WAIT_CUE_PATH))
             ),
-            web_search_wait_cue_delay_seconds=_get_float(
-                env_values, "WEB_SEARCH_WAIT_CUE_DELAY_SECONDS", 0.5
-            ),
-            web_search_wait_cue_gain=_get_float(env_values, "WEB_SEARCH_WAIT_CUE_GAIN", 0.20),
-            web_search_model=_get_str(env_values, "WEB_SEARCH_MODEL", "gpt-5.2"),
-            playback_device=_get_str(env_values, "PLAYBACK_DEVICE", "auto"),
-            output_gain=_get_float(env_values, "OUTPUT_GAIN", 0.5),
-            cue_output_gain=_get_float(env_values, "CUE_OUTPUT_GAIN", 0.22),
-            input_ns_enabled=_get_bool(env_values, "INPUT_NS_ENABLED", False),
-            input_agc_enabled=_get_bool(env_values, "INPUT_AGC_ENABLED", False),
-            input_ns_noise_floor_margin=_get_float(
-                env_values, "INPUT_NS_NOISE_FLOOR_MARGIN", 1.8
-            ),
-            input_ns_min_rms=_get_int(env_values, "INPUT_NS_MIN_RMS", 25),
-            input_ns_attenuation=_get_float(env_values, "INPUT_NS_ATTENUATION", 0.35),
-            input_agc_target_rms=_get_int(env_values, "INPUT_AGC_TARGET_RMS", 1100),
-            input_agc_max_gain=_get_float(env_values, "INPUT_AGC_MAX_GAIN", 4.0),
-            input_agc_attack=_get_float(env_values, "INPUT_AGC_ATTACK", 0.35),
-            input_agc_release=_get_float(env_values, "INPUT_AGC_RELEASE", 0.08),
-            turn_detection_type=_get_str(env_values, "TURN_DETECTION_TYPE", "none"),
-            turn_detection_eagerness=_get_str(env_values, "TURN_DETECTION_EAGERNESS", "low"),
-            turn_detection_create_response=_get_bool(
-                env_values, "TURN_DETECTION_CREATE_RESPONSE", True
-            ),
-            turn_detection_interrupt_response=_get_bool(
-                env_values, "TURN_DETECTION_INTERRUPT_RESPONSE", False
-            ),
-            recording_start_timeout=_get_float(env_values, "RECORDING_START_TIMEOUT", 8.0),
-            recording_max_duration=_get_float(env_values, "RECORDING_MAX_DURATION", 10.0),
-            recording_silence_duration=_get_float(
-                env_values, "RECORDING_SILENCE_DURATION", 1.2
-            ),
-            recording_rms_threshold=_get_int(env_values, "RECORDING_RMS_THRESHOLD", 45),
-            recording_preroll_frames=_get_int(env_values, "RECORDING_PREROLL_FRAMES", 12),
-            auto_trigger_enabled=_get_bool(env_values, "AUTO_TRIGGER_ENABLED", False),
-            auto_trigger_interval_seconds=_get_float(
-                env_values, "AUTO_TRIGGER_INTERVAL_SECONDS", 0.0
-            ),
-            auto_trigger_max_sessions=_get_int(env_values, "AUTO_TRIGGER_MAX_SESSIONS", 0),
-            auto_trigger_use_synthetic_audio=_get_bool(
-                env_values, "AUTO_TRIGGER_USE_SYNTHETIC_AUDIO", False
-            ),
-            auto_trigger_synthetic_audio_ms=_get_int(
-                env_values, "AUTO_TRIGGER_SYNTHETIC_AUDIO_MS", 2500
-            ),
-            auto_trigger_synthetic_frequency_hz=_get_float(
-                env_values, "AUTO_TRIGGER_SYNTHETIC_FREQUENCY_HZ", 220.0
-            ),
-            auto_trigger_synthetic_amplitude=_get_int(
-                env_values, "AUTO_TRIGGER_SYNTHETIC_AMPLITUDE", 700
-            ),
-            response_max_output_tokens=_get_int(env_values, "RESPONSE_MAX_OUTPUT_TOKENS", 800),
-            health_heartbeat_enabled=_get_bool(env_values, "HEALTH_HEARTBEAT_ENABLED", True),
-            health_heartbeat_interval_seconds=_get_float(
-                env_values, "HEALTH_HEARTBEAT_INTERVAL_SECONDS", 60.0
-            ),
-            realtime_connect_timeout_seconds=_get_float(
-                env_values, "REALTIME_CONNECT_TIMEOUT_SECONDS", 20.0
-            ),
-            realtime_session_created_timeout_seconds=_get_float(
-                env_values, "REALTIME_SESSION_CREATED_TIMEOUT_SECONDS", 3.0
-            ),
-            realtime_post_update_grace_seconds=_get_float(
-                env_values, "REALTIME_POST_UPDATE_GRACE_SECONDS", 1.0
-            ),
-            realtime_connect_retries=_get_int(env_values, "REALTIME_CONNECT_RETRIES", 2),
-            realtime_retry_backoff_seconds=_get_float(
-                env_values, "REALTIME_RETRY_BACKOFF_SECONDS", 0.75
-            ),
-            realtime_retry_backoff_max_seconds=_get_float(
-                env_values, "REALTIME_RETRY_BACKOFF_MAX_SECONDS", 3.0
-            ),
+            web_search_wait_cue_delay_seconds=_get_float(advanced, "web_search_wait_cue_delay_seconds", 0.5),
+            web_search_wait_cue_gain=_get_float(advanced, "web_search_wait_cue_gain", 0.20),
+            web_search_model=_get_str(advanced, "web_search_model", "gpt-5.2"),
+            playback_device=_get_str(advanced, "playback_device", "auto"),
+            output_gain=_get_float(advanced, "output_gain", 0.5),
+            cue_output_gain=_get_float(advanced, "cue_output_gain", 0.22),
+            input_ns_enabled=_get_bool(advanced, "input_ns_enabled", False),
+            input_agc_enabled=_get_bool(advanced, "input_agc_enabled", False),
+            input_ns_noise_floor_margin=_get_float(advanced, "input_ns_noise_floor_margin", 1.8),
+            input_ns_min_rms=_get_int(advanced, "input_ns_min_rms", 25),
+            input_ns_attenuation=_get_float(advanced, "input_ns_attenuation", 0.35),
+            input_agc_target_rms=_get_int(advanced, "input_agc_target_rms", 1100),
+            input_agc_max_gain=_get_float(advanced, "input_agc_max_gain", 4.0),
+            input_agc_attack=_get_float(advanced, "input_agc_attack", 0.35),
+            input_agc_release=_get_float(advanced, "input_agc_release", 0.08),
+            turn_detection_type=_get_str(advanced, "turn_detection_type", "none"),
+            turn_detection_eagerness=_get_str(advanced, "turn_detection_eagerness", "low"),
+            turn_detection_create_response=_get_bool(advanced, "turn_detection_create_response", True),
+            turn_detection_interrupt_response=_get_bool(advanced, "turn_detection_interrupt_response", False),
+            recording_start_timeout=_get_float(advanced, "recording_start_timeout", 8.0),
+            recording_max_duration=_get_float(advanced, "recording_max_duration", 10.0),
+            recording_silence_duration=_get_float(advanced, "recording_silence_duration", 1.2),
+            recording_rms_threshold=_get_int(advanced, "recording_rms_threshold", 45),
+            recording_preroll_frames=_get_int(advanced, "recording_preroll_frames", 12),
+            auto_trigger_enabled=_get_bool(advanced, "auto_trigger_enabled", False),
+            auto_trigger_interval_seconds=_get_float(advanced, "auto_trigger_interval_seconds", 0.0),
+            auto_trigger_max_sessions=_get_int(advanced, "auto_trigger_max_sessions", 0),
+            auto_trigger_use_synthetic_audio=_get_bool(advanced, "auto_trigger_use_synthetic_audio", False),
+            auto_trigger_synthetic_audio_ms=_get_int(advanced, "auto_trigger_synthetic_audio_ms", 2500),
+            auto_trigger_synthetic_frequency_hz=_get_float(advanced, "auto_trigger_synthetic_frequency_hz", 220.0),
+            auto_trigger_synthetic_amplitude=_get_int(advanced, "auto_trigger_synthetic_amplitude", 700),
+            response_max_output_tokens=_get_int(advanced, "response_max_output_tokens", 800),
+            health_heartbeat_enabled=_get_bool(advanced, "health_heartbeat_enabled", True),
+            health_heartbeat_interval_seconds=_get_float(advanced, "health_heartbeat_interval_seconds", 60.0),
+            realtime_connect_timeout_seconds=_get_float(advanced, "realtime_connect_timeout_seconds", 20.0),
+            realtime_session_created_timeout_seconds=_get_float(advanced, "realtime_session_created_timeout_seconds", 3.0),
+            realtime_post_update_grace_seconds=_get_float(advanced, "realtime_post_update_grace_seconds", 1.0),
+            realtime_connect_retries=_get_int(advanced, "realtime_connect_retries", 2),
+            realtime_retry_backoff_seconds=_get_float(advanced, "realtime_retry_backoff_seconds", 0.75),
+            realtime_retry_backoff_max_seconds=_get_float(advanced, "realtime_retry_backoff_max_seconds", 3.0),
         )
 
     @property
@@ -390,30 +341,27 @@ def configure_logging(level_name: str) -> None:
     )
 
 
-def _load_env_values() -> dict[str, str]:
-    values = {
-        key: value
-        for key, value in dotenv_values(BASE_DIR / ".env").items()
-        if key and value is not None
-    }
-    values.update(os.environ)
-    return values
+def _get_str(values: dict[str, object], name: str, default: str) -> str:
+    value = values.get(name, default)
+    return str(value).strip()
 
 
-def _get_str(values: dict[str, str], name: str, default: str) -> str:
-    return values.get(name, default).strip()
+def _get_bool(values: dict[str, object], name: str, default: bool) -> bool:
+    value = values.get(name, default)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return default
 
 
-def _get_bool(values: dict[str, str], name: str, default: bool) -> bool:
-    raw_value = values.get(name)
-    if raw_value is None:
-        return default
-    return raw_value.strip().lower() in {"1", "true", "yes", "on"}
+def _get_int(values: dict[str, object], name: str, default: int) -> int:
+    value = values.get(name, default)
+    return int(value)
 
 
-def _get_int(values: dict[str, str], name: str, default: int) -> int:
-    return int(_get_str(values, name, str(default)))
-
-
-def _get_float(values: dict[str, str], name: str, default: float) -> float:
-    return float(_get_str(values, name, str(default)))
+def _get_float(values: dict[str, object], name: str, default: float) -> float:
+    value = values.get(name, default)
+    return float(value)

@@ -10,23 +10,22 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-from dotenv import dotenv_values
-
 from .config import DEFAULT_SYSTEM_PROMPT
-from .managed_config import (
-    ManagedConfigPaths,
-    editable_config_for_api,
-    load_editable_config,
-    merge_editable_config,
+from .config_store import (
+    ConfigPaths,
+    config_values_for_api,
+    load_config_values,
+    merge_config_values,
     missing_required_fields,
-    resolve_managed_config_paths,
-    validate_editable_config,
-    write_managed_config,
+    resolve_config_paths,
+    validate_config_values,
+    write_config_files,
 )
 from .version import VERSION
 
 
 APP_DIR = Path(__file__).resolve().parents[1]
+ASSETS_DIR = APP_DIR / "ui_assets"
 HTML_PAGE = """<!doctype html>
 <html lang="en">
 <head>
@@ -35,93 +34,195 @@ HTML_PAGE = """<!doctype html>
   <title>Snowman Config</title>
   <style>
     :root {
-      --bg: #f3efe5;
-      --panel: #fffaf2;
-      --ink: #18211f;
-      --muted: #55605c;
-      --line: #d7cdbd;
-      --accent: #0e6b5a;
-      --accent-soft: #d6efe8;
-      --warn: #a14a1c;
-      --warn-soft: #fde9dd;
-      --good: #25614c;
-      --good-soft: #ddefe7;
-      --shadow: rgba(24, 33, 31, 0.08);
+      --bg: #9dc5db;
+      --bg-deep: #6f9cb8;
+      --panel: #edf7ff;
+      --panel-alt: #fff6d6;
+      --ink: #16304c;
+      --muted: #4f6980;
+      --line: #16304c;
+      --accent: #ff7f50;
+      --accent-press: #e2683b;
+      --warn: #9c3d24;
+      --warn-soft: #ffd3be;
+      --good: #1f6651;
+      --good-soft: #d2f1e7;
+      --pixel-shadow: 0 6px 0 rgba(22, 48, 76, 0.18);
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      font-family: "Courier New", "Lucida Console", monospace;
       background:
-        radial-gradient(circle at top left, #fff8ec, transparent 34%),
-        radial-gradient(circle at top right, #dcefe9, transparent 28%),
-        var(--bg);
+        linear-gradient(180deg, rgba(255,255,255,0.25), transparent 22%),
+        linear-gradient(0deg, rgba(255,255,255,0.18), transparent 28%),
+        linear-gradient(90deg, rgba(255,255,255,0.14) 1px, transparent 1px),
+        linear-gradient(rgba(255,255,255,0.14) 1px, transparent 1px),
+        linear-gradient(180deg, var(--bg), var(--bg-deep));
+      background-size: auto, auto, 20px 20px, 20px 20px, auto;
       color: var(--ink);
     }
     .wrap {
-      max-width: 1080px;
+      max-width: 980px;
       margin: 0 auto;
-      padding: 32px 20px 56px;
+      padding: 28px 16px 52px;
     }
     .hero {
-      display: grid;
-      gap: 10px;
-      margin-bottom: 22px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+    .logo-shell {
+      width: min(240px, 52vw);
+      padding: 12px;
+      border: 4px solid var(--line);
+      background: var(--panel-alt);
+      box-shadow: var(--pixel-shadow);
+    }
+    .logo-shell img {
+      display: block;
+      width: 100%;
+      height: auto;
+      image-rendering: pixelated;
     }
     .hero h1 {
       margin: 0;
-      font-size: clamp(2rem, 4vw, 3rem);
-      letter-spacing: -0.04em;
+      font-size: clamp(1.8rem, 4vw, 2.9rem);
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
     }
-    .hero p {
-      margin: 0;
-      color: var(--muted);
-      max-width: 60ch;
+    .status-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+      margin: 0 0 20px;
     }
     .status {
       display: flex;
       flex-wrap: wrap;
       gap: 10px;
-      margin: 20px 0 24px;
+      flex: 1 1 520px;
     }
     .pill {
-      padding: 9px 12px;
-      border-radius: 999px;
-      font-size: 0.95rem;
-      border: 1px solid var(--line);
-      background: rgba(255,255,255,0.65);
+      padding: 10px 12px;
+      font-size: 0.9rem;
+      border: 3px solid var(--line);
+      background: var(--panel);
+      box-shadow: 3px 3px 0 rgba(22, 48, 76, 0.18);
     }
-    .pill.good { background: var(--good-soft); color: var(--good); border-color: #bfd8cb; }
-    .pill.warn { background: var(--warn-soft); color: var(--warn); border-color: #e7c1ac; }
+    .pill.good { background: var(--good-soft); color: var(--good); }
+    .pill.warn { background: var(--warn-soft); color: var(--warn); }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: flex-end;
+      flex: 0 0 auto;
+    }
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin: 0 0 -4px;
+      padding: 0 12px;
+      align-items: flex-end;
+    }
+    .tab {
+      position: relative;
+      top: 4px;
+      border: 4px solid var(--line);
+      border-bottom-width: 0;
+      border-radius: 10px 10px 0 0;
+      background: #c8dceb;
+      color: var(--muted);
+      padding: 12px 18px 14px;
+      box-shadow: 4px 0 0 rgba(22, 48, 76, 0.12);
+      font-weight: 700;
+      text-transform: uppercase;
+      cursor: pointer;
+    }
+    .tab.active {
+      background: var(--panel-alt);
+      color: var(--ink);
+      box-shadow: none;
+      z-index: 2;
+    }
+    .tab:hover {
+      transform: none;
+      box-shadow: 4px 0 0 rgba(22, 48, 76, 0.12);
+      background: #d8e7f2;
+      color: var(--ink);
+    }
+    .tab:active {
+      transform: none;
+      box-shadow: none;
+      background: #d8e7f2;
+    }
     .grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+      grid-template-columns: 1fr;
       gap: 18px;
+      border-top: 4px solid var(--line);
+      padding-top: 18px;
     }
     .card {
       background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 20px;
-      box-shadow: 0 14px 40px var(--shadow);
-      padding: 18px;
+      border: 4px solid var(--line);
+      box-shadow: var(--pixel-shadow);
+      padding: 20px;
     }
     .card h2 {
-      margin: 0 0 6px;
-      font-size: 1.1rem;
+      margin: 0 0 8px;
+      font-size: 1.15rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
     }
     .card p {
-      margin: 0 0 16px;
+      margin: 0 0 18px;
       color: var(--muted);
-      font-size: 0.95rem;
+      font-size: 0.92rem;
+      line-height: 1.45;
     }
     label {
       display: block;
       font-weight: 600;
-      font-size: 0.95rem;
+      font-size: 0.9rem;
       margin-bottom: 8px;
+      text-transform: uppercase;
+    }
+    .field-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .secret-state {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+      padding: 5px 10px;
+      border: 3px solid var(--line);
+      background: #d8e7f2;
+      color: var(--muted);
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .secret-state.saved {
+      background: var(--good-soft);
+      color: var(--good);
+    }
+    .secret-state.missing {
+      background: var(--warn-soft);
+      color: var(--warn);
     }
     .required::after {
-      content: " *";
+      content: " [*]";
       color: var(--warn);
     }
     input, select, textarea, button {
@@ -129,16 +230,25 @@ HTML_PAGE = """<!doctype html>
     }
     input, select, textarea {
       width: 100%;
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      padding: 12px 14px;
+      border: 3px solid var(--line);
+      padding: 14px 16px;
       background: white;
       color: var(--ink);
       margin-bottom: 14px;
+      box-shadow: inset 2px 2px 0 rgba(22, 48, 76, 0.08);
     }
     textarea {
-      min-height: 180px;
+      min-height: 240px;
       resize: vertical;
+      line-height: 1.5;
+      overflow: hidden;
+    }
+    #system_prompt {
+      min-height: 620px;
+    }
+    #advanced_json {
+      min-height: 120px;
+      resize: none;
     }
     .secret-row {
       display: grid;
@@ -155,63 +265,85 @@ HTML_PAGE = """<!doctype html>
       margin-bottom: 14px;
       color: var(--muted);
       font-size: 0.85rem;
-    }
-    .actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      margin-top: 24px;
+      line-height: 1.45;
     }
     button {
-      border: 0;
-      border-radius: 999px;
+      border: 3px solid var(--line);
       padding: 13px 18px;
       cursor: pointer;
       background: var(--accent);
-      color: white;
-      box-shadow: 0 10px 24px rgba(14, 107, 90, 0.18);
+      color: var(--line);
+      font-weight: 700;
+      text-transform: uppercase;
+      box-shadow: 4px 4px 0 rgba(22, 48, 76, 0.22);
+    }
+    button:hover {
+      transform: translate(1px, 1px);
+      box-shadow: 3px 3px 0 rgba(22, 48, 76, 0.22);
+    }
+    button:active {
+      transform: translate(4px, 4px);
+      box-shadow: none;
+      background: var(--accent-press);
     }
     button.secondary {
-      background: white;
+      background: var(--panel-alt);
       color: var(--ink);
-      border: 1px solid var(--line);
-      box-shadow: none;
+      box-shadow: 4px 4px 0 rgba(22, 48, 76, 0.12);
     }
     .panel {
       margin-top: 18px;
-      padding: 14px 16px;
-      border-radius: 16px;
-      border: 1px solid var(--line);
-      background: rgba(255,255,255,0.7);
+      padding: 16px 18px;
+      border: 4px solid var(--line);
+      background: var(--panel);
       white-space: pre-wrap;
       min-height: 60px;
+      box-shadow: var(--pixel-shadow);
+      line-height: 1.45;
     }
     .panel.warn {
       background: var(--warn-soft);
-      border-color: #e7c1ac;
       color: var(--warn);
     }
     .panel.good {
       background: var(--good-soft);
-      border-color: #bfd8cb;
       color: var(--good);
     }
+    .hidden { display: none; }
     @media (max-width: 720px) {
-      .wrap { padding: 24px 14px 40px; }
+      .wrap { padding: 22px 12px 38px; }
+      .status-bar { flex-direction: column; }
+      .actions { justify-content: flex-start; }
       .secret-row { grid-template-columns: 1fr; }
+      #system_prompt { min-height: 480px; }
+      #advanced_json { min-height: 120px; }
+      .tabs { flex-wrap: wrap; }
     }
   </style>
 </head>
 <body>
   <div class="wrap">
     <div class="hero">
-      <h1>Snowman Control Surface</h1>
-      <p>Use the same page for first-time setup and later updates. Required fields are marked clearly, and related settings stay grouped together.</p>
+      <div class="logo-shell">
+        <img src="/assets/snowman_retro.svg" alt="Snowman logo">
+      </div>
+      <h1>Snowman Config</h1>
     </div>
 
-    <div id="status-pills" class="status"></div>
+    <div class="status-bar">
+      <div id="status-pills" class="status"></div>
+      <div class="actions">
+        <button id="validate" type="button">Validate</button>
+        <button id="apply" type="button">Save And Restart</button>
+      </div>
+    </div>
 
-    <div class="grid">
+    <div class="tabs">
+      <button id="tab_basic" class="tab active" type="button">Basic</button>
+      <button id="tab_advanced" class="tab" type="button">Advanced</button>
+    </div>
+
+    <div id="panel_basic" class="grid">
       <section class="card">
         <h2>AI Provider</h2>
         <p>Provider, credentials, and voice settings for realtime replies.</p>
@@ -220,7 +352,10 @@ HTML_PAGE = """<!doctype html>
           <option value="openai">OpenAI Realtime</option>
         </select>
 
-        <label class="required" for="openai_api_key">OpenAI API Key</label>
+        <div class="field-head">
+          <label class="required" for="openai_api_key">OpenAI API Key</label>
+          <div id="openai_api_key_state" class="secret-state missing">Missing</div>
+        </div>
         <div class="secret-row">
           <input id="openai_api_key" type="password" autocomplete="off" placeholder="Enter a new key or leave blank to keep the current one">
           <button id="toggle_openai_api_key" class="secondary" type="button">Show</button>
@@ -241,17 +376,28 @@ HTML_PAGE = """<!doctype html>
       <section class="card">
         <h2>Device / Wake Word</h2>
         <p>Local device credentials needed to detect the wake word on Raspberry Pi.</p>
-        <label class="required" for="porcupine_access_key">Porcupine Access Key</label>
+        <div class="field-head">
+          <label class="required" for="porcupine_access_key">Porcupine Access Key</label>
+          <div id="porcupine_access_key_state" class="secret-state missing">Missing</div>
+        </div>
         <div class="secret-row">
           <input id="porcupine_access_key" type="password" autocomplete="off" placeholder="Enter a new key or leave blank to keep the current one">
           <button id="toggle_porcupine_access_key" class="secondary" type="button">Show</button>
         </div>
         <div id="porcupine_access_key_hint" class="hint"></div>
+
+        <label for="wake_word_model">Wake Word Model (.ppn)</label>
+        <input id="custom_wake_keyword_path" type="hidden">
+        <div class="secret-row">
+          <input id="wake_word_model" type="file" accept=".ppn">
+          <button id="upload_wake_word_model" class="secondary" type="button">Upload</button>
+        </div>
+        <div id="wake_word_model_hint" class="hint">Using the built-in default wake word model.</div>
       </section>
 
       <section class="card">
-        <h2>Location / Session</h2>
-        <p>Optional defaults for location-aware answers and multi-turn follow-up mode.</p>
+        <h2>Location</h2>
+        <p>Optional defaults for location-aware answers. Multi-turn follow-up stays enabled by default.</p>
         <label for="location_city">City</label>
         <input id="location_city" type="text" placeholder="Chicago">
 
@@ -263,37 +409,22 @@ HTML_PAGE = """<!doctype html>
 
         <label for="location_timezone">Timezone</label>
         <input id="location_timezone" type="text" placeholder="America/Chicago">
-
-        <label for="session_window_enabled">Session Window</label>
-        <select id="session_window_enabled">
-          <option value="false">Single-turn</option>
-          <option value="true">Session window enabled</option>
-        </select>
       </section>
     </div>
 
-    <div class="actions">
-      <button id="validate" type="button">Validate</button>
-      <button id="apply" type="button">Save And Restart</button>
+    <div id="panel_advanced" class="grid hidden">
+      <section class="card">
+        <h2>Advanced Configuration</h2>
+        <p>Edit the JSON directly if you need to tune models, audio devices, turn timing, gain, retries, or health checks.</p>
+        <label for="advanced_json">Advanced Settings JSON</label>
+        <textarea id="advanced_json"></textarea>
+      </section>
     </div>
 
     <div id="message" class="panel">Loading configuration...</div>
   </div>
 
   <script>
-    const fieldIds = [
-      "provider",
-      "openai_api_key",
-      "openai_voice",
-      "system_prompt",
-      "porcupine_access_key",
-      "location_city",
-      "location_region",
-      "location_country_code",
-      "location_timezone",
-      "session_window_enabled"
-    ];
-
     function $(id) { return document.getElementById(id); }
 
     function setMessage(text, kind = "") {
@@ -303,17 +434,29 @@ HTML_PAGE = """<!doctype html>
     }
 
     function payloadFromForm() {
+      let advanced;
+      try {
+        advanced = JSON.parse($("advanced_json").value || "{}");
+      } catch (error) {
+        setMessage(`Advanced settings JSON is invalid: ${error.message}`, "warn");
+        return null;
+      }
+      if (!advanced || typeof advanced !== "object" || Array.isArray(advanced)) {
+        setMessage("Advanced settings JSON must be an object.", "warn");
+        return null;
+      }
       return {
         provider: $("provider").value,
         openai_api_key: $("openai_api_key").value,
         openai_voice: $("openai_voice").value,
         system_prompt: $("system_prompt").value,
         porcupine_access_key: $("porcupine_access_key").value,
+        custom_wake_keyword_path: $("custom_wake_keyword_path").value,
         location_city: $("location_city").value,
         location_region: $("location_region").value,
         location_country_code: $("location_country_code").value,
         location_timezone: $("location_timezone").value,
-        session_window_enabled: $("session_window_enabled").value === "true"
+        advanced
       };
     }
 
@@ -321,24 +464,45 @@ HTML_PAGE = """<!doctype html>
       $("provider").value = config.provider || "openai";
       $("openai_voice").value = config.openai_voice || "";
       $("system_prompt").value = config.system_prompt || "";
+      $("custom_wake_keyword_path").value = config.custom_wake_keyword_path || "";
       $("location_city").value = config.location_city || "";
       $("location_region").value = config.location_region || "";
       $("location_country_code").value = config.location_country_code || "";
       $("location_timezone").value = config.location_timezone || "";
-      $("session_window_enabled").value = String(Boolean(config.session_window_enabled));
+      $("advanced_json").value = JSON.stringify(config.advanced || {}, null, 2);
       $("openai_api_key").value = "";
       $("porcupine_access_key").value = "";
-      $("openai_api_key_hint").textContent = config.openai_api_key_configured
-        ? "A key is already saved. Leave blank to keep it."
-        : "No key saved yet.";
-      $("porcupine_access_key_hint").textContent = config.porcupine_access_key_configured
-        ? "A key is already saved. Leave blank to keep it."
+      $("wake_word_model").value = "";
+      setSecretState(
+        "openai_api_key",
+        config.openai_api_key_configured,
+        config.openai_api_key_masked || ""
+      );
+      setSecretState(
+        "porcupine_access_key",
+        config.porcupine_access_key_configured,
+        config.porcupine_access_key_masked || ""
+      );
+      $("wake_word_model_hint").textContent = config.custom_wake_keyword_configured
+        ? `Uploaded model: ${config.custom_wake_keyword_name}`
+        : "Using the built-in default wake word model.";
+      autoGrowPrompt();
+      autoGrowAdvanced();
+    }
+
+    function setSecretState(id, configured, maskedValue) {
+      const state = $(id + "_state");
+      const hint = $(id + "_hint");
+      state.className = "secret-state " + (configured ? "saved" : "missing");
+      state.textContent = configured ? "Saved" : "Missing";
+      hint.textContent = configured
+        ? `Saved key: ${maskedValue}. Leave blank to keep it.`
         : "No key saved yet.";
     }
 
     function renderStatus(status) {
       const pills = [];
-      pills.push(`<div class="pill ${status.setup_state === "ready" ? "good" : "warn"}">Setup: ${status.setup_state}</div>`);
+      pills.push(`<div class="pill ${status.setup_state === "ready" ? "good" : "warn"}">Config: ${status.setup_state}</div>`);
       pills.push(`<div class="pill ${status.service_state === "active" ? "good" : "warn"}">Realtime Service: ${status.service_state}</div>`);
       if (status.missing_required_fields.length) {
         pills.push(`<div class="pill warn">Missing: ${status.missing_required_fields.join(", ")}</div>`);
@@ -372,10 +536,14 @@ HTML_PAGE = """<!doctype html>
     }
 
     async function validateConfig() {
+      const payload = payloadFromForm();
+      if (!payload) {
+        return;
+      }
       try {
         const result = await readJson("/api/config/validate", {
           method: "POST",
-          body: JSON.stringify(payloadFromForm())
+          body: JSON.stringify(payload)
         });
         if (result.errors.length) {
           setMessage(result.errors.join("\\n"), "warn");
@@ -389,11 +557,15 @@ HTML_PAGE = """<!doctype html>
     }
 
     async function applyConfig() {
+      const payload = payloadFromForm();
+      if (!payload) {
+        return;
+      }
       try {
         setMessage("Applying configuration and restarting realtime service...");
         const result = await readJson("/api/config/apply", {
           method: "POST",
-          body: JSON.stringify(payloadFromForm())
+          body: JSON.stringify(payload)
         });
         populateForm(result.config);
         renderStatus(result.status);
@@ -401,6 +573,48 @@ HTML_PAGE = """<!doctype html>
       } catch (error) {
         setMessage(error.message, "warn");
       }
+    }
+
+    async function uploadWakeWordModel() {
+      const input = $("wake_word_model");
+      const file = input.files && input.files[0];
+      if (!file) {
+        setMessage("Choose a .ppn file before uploading.", "warn");
+        return;
+      }
+      const bytes = await file.arrayBuffer();
+      let binary = "";
+      const view = new Uint8Array(bytes);
+      for (const byte of view) {
+        binary += String.fromCharCode(byte);
+      }
+      try {
+        setMessage("Uploading wake word model...");
+        const result = await readJson("/api/wake-word/upload", {
+          method: "POST",
+          body: JSON.stringify({
+            filename: file.name,
+            content_base64: btoa(binary)
+          })
+        });
+        $("custom_wake_keyword_path").value = result.custom_wake_keyword_path;
+        $("wake_word_model_hint").textContent = `Uploaded model: ${result.custom_wake_keyword_name}`;
+        setMessage("Wake word model uploaded. Save and restart to apply it.", "good");
+      } catch (error) {
+        setMessage(error.message, "warn");
+      }
+    }
+
+    function autoGrowPrompt() {
+      const textarea = $("system_prompt");
+      textarea.style.height = "auto";
+      textarea.style.height = `${textarea.scrollHeight}px`;
+    }
+
+    function autoGrowAdvanced() {
+      const textarea = $("advanced_json");
+      textarea.style.height = "auto";
+      textarea.style.height = `${textarea.scrollHeight}px`;
     }
 
     function wireSecretToggle(id) {
@@ -413,8 +627,24 @@ HTML_PAGE = """<!doctype html>
       });
     }
 
+    function showTab(name) {
+      const basic = name === "basic";
+      $("panel_basic").classList.toggle("hidden", !basic);
+      $("panel_advanced").classList.toggle("hidden", basic);
+      $("tab_basic").classList.toggle("active", basic);
+      $("tab_advanced").classList.toggle("active", !basic);
+      if (!basic) {
+        requestAnimationFrame(autoGrowAdvanced);
+      }
+    }
+
     $("validate").addEventListener("click", validateConfig);
     $("apply").addEventListener("click", applyConfig);
+    $("upload_wake_word_model").addEventListener("click", uploadWakeWordModel);
+    $("system_prompt").addEventListener("input", autoGrowPrompt);
+    $("advanced_json").addEventListener("input", autoGrowAdvanced);
+    $("tab_basic").addEventListener("click", () => showTab("basic"));
+    $("tab_advanced").addEventListener("click", () => showTab("advanced"));
     wireSecretToggle("openai_api_key");
     wireSecretToggle("porcupine_access_key");
 
@@ -431,7 +661,6 @@ class ConfigUIServer(ThreadingHTTPServer):
     def __init__(self, server_address: tuple[str, int]) -> None:
         super().__init__(server_address, ConfigUIHandler)
         self.last_apply_message = ""
-        self.last_apply_ok = False
 
 
 class ConfigUIHandler(BaseHTTPRequestHandler):
@@ -444,8 +673,11 @@ class ConfigUIHandler(BaseHTTPRequestHandler):
         if parsed.path == "/":
             self._write_html(HTML_PAGE)
             return
+        if parsed.path == "/assets/snowman_retro.svg":
+            self._write_asset(ASSETS_DIR / "snowman_retro.svg", "image/svg+xml")
+            return
         if parsed.path == "/api/config":
-            self._write_json({"config": editable_config_for_api(_load_current_config())})
+            self._write_json({"config": config_values_for_api(_load_config())})
             return
         if parsed.path == "/api/setup-state":
             self._write_json(_status_payload())
@@ -462,9 +694,18 @@ class ConfigUIHandler(BaseHTTPRequestHandler):
         body = self._read_json_body()
         if body is None:
             return
-        merged = merge_editable_config(_load_current_config(), body)
+        if parsed.path == "/api/wake-word/upload":
+            try:
+                upload_result = _store_wake_word_model(body)
+            except RuntimeError as exc:
+                self._write_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
+            self._write_json(upload_result)
+            return
+
+        merged = merge_config_values(_load_config(), body)
         if parsed.path == "/api/config/validate":
-            errors = validate_editable_config(merged)
+            errors = validate_config_values(merged)
             self._write_json(
                 {
                     "errors": errors,
@@ -476,36 +717,26 @@ class ConfigUIHandler(BaseHTTPRequestHandler):
             )
             return
         if parsed.path == "/api/config/apply":
-            errors = validate_editable_config(merged)
+            errors = validate_config_values(merged)
             if errors:
                 self._write_json(
-                    {
-                        "error": "\n".join(errors),
-                        "errors": errors,
-                    },
+                    {"error": "\n".join(errors), "errors": errors},
                     status=HTTPStatus.BAD_REQUEST,
                 )
                 return
             try:
                 _apply_config(merged)
             except RuntimeError as exc:
-                self.server.last_apply_ok = False
                 self.server.last_apply_message = str(exc)
-                self._write_json(
-                    {"error": str(exc)},
-                    status=HTTPStatus.INTERNAL_SERVER_ERROR,
-                )
+                self._write_json({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
                 return
 
-            self.server.last_apply_ok = True
             self.server.last_apply_message = "Configuration applied successfully."
             self._write_json(
                 {
                     "message": self.server.last_apply_message,
-                    "config": editable_config_for_api(_load_current_config()),
-                    "status": _status_payload(
-                        last_apply_message=self.server.last_apply_message
-                    ),
+                    "config": config_values_for_api(_load_config()),
+                    "status": _status_payload(last_apply_message=self.server.last_apply_message),
                 }
             )
             return
@@ -515,7 +746,7 @@ class ConfigUIHandler(BaseHTTPRequestHandler):
         return
 
     def _check_auth(self) -> bool:
-        password = _load_current_config().get("admin_password", "")
+        password = _load_config().get("admin_password", "")
         if not isinstance(password, str) or not password.strip():
             return True
         auth_header = self.headers.get("Authorization", "")
@@ -561,6 +792,17 @@ class ConfigUIHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(payload)
 
+    def _write_asset(self, path: Path, content_type: str) -> None:
+        if not path.exists():
+            self._write_json({"error": "Asset not found"}, status=HTTPStatus.NOT_FOUND)
+            return
+        payload = path.read_bytes()
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
     def _write_json(self, payload: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
         encoded = json.dumps(payload).encode("utf-8")
         self.send_response(status)
@@ -578,21 +820,8 @@ def main() -> None:
     server.serve_forever()
 
 
-def _load_env_values() -> dict[str, str]:
-    values = {
-        key: value
-        for key, value in dotenv_values(APP_DIR / ".env").items()
-        if key and value is not None
-    }
-    values.update(os.environ)
-    return values
-
-
-def _load_current_config() -> dict[str, object]:
-    return load_editable_config(
-        default_system_prompt=DEFAULT_SYSTEM_PROMPT,
-        env_values=_load_env_values(),
-    )
+def _load_config() -> dict[str, object]:
+    return load_config_values(default_system_prompt=DEFAULT_SYSTEM_PROMPT)
 
 
 def _status_payload(
@@ -600,7 +829,7 @@ def _status_payload(
     config_payload: dict[str, object] | None = None,
     last_apply_message: str = "",
 ) -> dict[str, object]:
-    current = config_payload or _load_current_config()
+    current = config_payload or _load_config()
     missing = missing_required_fields(current)
     service_state = _service_state(os.getenv("SNOWMAN_REALTIME_SERVICE", "snowman-realtime.service"))
     if missing:
@@ -633,16 +862,16 @@ def _service_state(service_name: str) -> str:
 
 
 def _apply_config(payload: dict[str, object]) -> None:
-    paths = resolve_managed_config_paths()
+    paths = resolve_config_paths()
     temp_dir = paths.data_dir / ".tmp-config-ui"
     temp_dir.mkdir(parents=True, exist_ok=True)
-    temp_paths = ManagedConfigPaths(
+    temp_paths = ConfigPaths(
         data_dir=temp_dir,
         config_path=temp_dir / "config.json",
-        secrets_path=temp_dir / "secrets.env",
+        secrets_path=temp_dir / "secrets.json",
     )
-    write_managed_config(temp_paths, payload)
-    script_path = APP_DIR / "scripts" / "apply_managed_config.sh"
+    write_config_files(temp_paths, payload)
+    script_path = APP_DIR / "scripts" / "apply_config.sh"
     result = subprocess.run(
         [
             str(script_path),
@@ -659,6 +888,37 @@ def _apply_config(payload: dict[str, object]) -> None:
     if result.returncode != 0:
         stderr = (result.stderr or result.stdout or "").strip()
         raise RuntimeError(stderr or "Failed to apply configuration")
+
+
+def _store_wake_word_model(payload: dict[str, object]) -> dict[str, object]:
+    filename = str(payload.get("filename", "")).strip()
+    content_base64 = str(payload.get("content_base64", "")).strip()
+    if not filename or not filename.lower().endswith(".ppn"):
+        raise RuntimeError("Wake word upload must be a .ppn file.")
+    if not content_base64:
+        raise RuntimeError("Wake word upload is missing file content.")
+
+    safe_name = "".join(
+        char for char in Path(filename).name if char.isalnum() or char in {"-", "_", "."}
+    )
+    if not safe_name.lower().endswith(".ppn"):
+        raise RuntimeError("Wake word upload must keep a .ppn filename.")
+
+    try:
+        raw_bytes = base64.b64decode(content_base64, validate=True)
+    except Exception as exc:
+        raise RuntimeError("Wake word upload content is not valid base64.") from exc
+    if not raw_bytes:
+        raise RuntimeError("Wake word upload is empty.")
+
+    wake_word_dir = resolve_config_paths().data_dir / "wake_words"
+    wake_word_dir.mkdir(parents=True, exist_ok=True)
+    target_path = wake_word_dir / safe_name
+    target_path.write_bytes(raw_bytes)
+    return {
+        "custom_wake_keyword_path": str(target_path),
+        "custom_wake_keyword_name": safe_name,
+    }
 
 
 if __name__ == "__main__":

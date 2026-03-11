@@ -9,9 +9,9 @@ User=__DEPLOY_USER__
 Group=audio
 WorkingDirectory=__REALTIME_DIR__
 Environment=SNOWMAN_DATA_DIR=__DATA_DIR__
-EnvironmentFile=-__REALTIME_DIR__/.env
 ExecStart=__REALTIME_DIR__/scripts/start_realtime.sh
-Restart=always
+Restart=on-failure
+RestartPreventExitStatus=78
 RestartSec=5
 KillMode=control-group
 StandardOutput=append:__REALTIME_DIR__/realtime.log

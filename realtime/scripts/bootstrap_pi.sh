@@ -45,17 +45,37 @@ if [[ "${REALTIME_DIR}" != "${APP_HOME}/realtime" ]]; then
 fi
 
 mkdir -p "${DATA_DIR}" "${DATA_DIR}/backups"
+
+python3 "${REALTIME_DIR}/scripts/migrate_legacy_config.py" --data-dir "${DATA_DIR}" --legacy-env-file "${REALTIME_DIR}/.env"
+
 if [[ ! -f "${DATA_DIR}/config.json" ]]; then
-  printf '{}\n' > "${DATA_DIR}/config.json"
-fi
-if [[ ! -f "${DATA_DIR}/secrets.env" ]]; then
-  : > "${DATA_DIR}/secrets.env"
+  cp "${REALTIME_DIR}/config.json" "${DATA_DIR}/config.json"
 fi
 
 generated_admin_password=""
-if ! grep -q '^ADMIN_PASSWORD=' "${DATA_DIR}/secrets.env"; then
+if [[ ! -f "${DATA_DIR}/secrets.json" ]]; then
+  printf '{}\n' > "${DATA_DIR}/secrets.json"
+fi
+if ! python3 - "${DATA_DIR}/secrets.json" <<'EOF'
+import json
+import sys
+from pathlib import Path
+
+payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+raise SystemExit(0 if payload.get("admin_password") else 1)
+EOF
+then
   generated_admin_password="$(python3 -c 'import secrets; print(secrets.token_urlsafe(18))')"
-  printf 'ADMIN_PASSWORD="%s"\n' "${generated_admin_password}" >> "${DATA_DIR}/secrets.env"
+  python3 - "${DATA_DIR}/secrets.json" "${generated_admin_password}" <<'EOF'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+payload = json.loads(path.read_text(encoding="utf-8"))
+payload["admin_password"] = sys.argv[2]
+path.write_text(json.dumps(payload, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")
+EOF
 fi
 
 python3 -m venv "${REALTIME_DIR}/venv"
@@ -65,10 +85,12 @@ python3 -m venv "${REALTIME_DIR}/venv"
 chmod 755 \
   "${REALTIME_DIR}/scripts/start_realtime.sh" \
   "${REALTIME_DIR}/scripts/start_config_ui.sh" \
-  "${REALTIME_DIR}/scripts/apply_managed_config.sh" \
+  "${REALTIME_DIR}/scripts/apply_config.sh" \
+  "${REALTIME_DIR}/scripts/check_legacy_config_match.py" \
   "${REALTIME_DIR}/scripts/check_realtime_health.sh" \
   "${REALTIME_DIR}/scripts/within_runtime_window.sh" \
-  "${REALTIME_DIR}/scripts/probe_realtime_connect.py"
+  "${REALTIME_DIR}/scripts/probe_realtime_connect.py" \
+  "${REALTIME_DIR}/scripts/migrate_legacy_config.py"
 
 render_template() {
   local template_file="$1"

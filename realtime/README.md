@@ -38,10 +38,10 @@ flowchart LR
 Preferred one-command deploy on Raspberry Pi:
 
 ```bash
-./realtime/scripts/deploy.sh --host <pi_hostname/ip> --user <username> [--port 22] [--env-file realtime/.env]
+./realtime/scripts/deploy.sh --host <pi_hostname/ip> --user <username> [--port 22]
 ```
 
-This script handles both first install and later redeploys. It syncs the app to `/home/<user>/voice-assistant-realtime/realtime`, refreshes the virtualenv, installs the parameterized systemd units, enables `snowman-realtime.service` and `snowman-realtime-healthcheck.timer`, and restarts the main service.
+This script handles both first install and later redeploys. It syncs the app to `/home/<user>/voice-assistant-realtime/realtime`, refreshes the virtualenv, installs the parameterized systemd units, migrates any legacy secrets file into `data/secrets.json`, enables `snowman-realtime.service` and `snowman-realtime-healthcheck.timer`, and restarts the main service.
 
 Directory layout:
 
@@ -64,19 +64,29 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-3. Create `.env` from the example:
+3. Start the config UI:
 
 ```bash
-cp .env.example .env
+./scripts/start_config_ui.sh
 ```
 
-4. Fill in:
+4. Open the UI in a browser:
 
-- `OPENAI_API_KEY`
-- `PORCUPINE_ACCESS_KEY`
-- audio and wake-word settings if needed
-- `WAKE_WORD_SENSITIVITY` defaults to `0.5`; raise it carefully if wake-word interrupt misses during playback
-- `SYSTEM_PROMPT` is not required in `.env`; the default assistant prompt now lives in code and is augmented at runtime with the current local date/time and current-information tool rules
+```text
+http://<pi-ip>:3010
+```
+
+5. Fill in the Basic tab:
+
+- OpenAI API key
+- Porcupine access key
+- voice
+- system prompt
+- optional wake-word and location settings
+
+6. Use the Advanced tab if you need to tune models, audio devices, gains, timeouts, retries, or health checks.
+
+All runtime settings now come from `data/config.json` and `data/secrets.json`. The old `.env` workflow is no longer used.
 
 ## Run
 
@@ -88,7 +98,7 @@ This wrapper kills any older `python3 -m snowman_realtime` instance first, then 
 
 For routine use on Raspberry Pi, prefer the systemd service instead of manual `nohup`.
 
-To bypass the wake word and repeatedly trigger turns automatically for debugging, set:
+To bypass the wake word and repeatedly trigger turns automatically for debugging, set these keys in the Advanced tab JSON:
 
 ```bash
 AUTO_TRIGGER_ENABLED=true
@@ -98,7 +108,7 @@ AUTO_TRIGGER_MAX_SESSIONS=0
 
 With that mode enabled, the app enters each turn directly and records the next utterance without waiting for `Snowman`.
 
-To make that mode fully automated for connection testing, also enable synthetic utterances:
+To make that mode fully automated for connection testing, also enable synthetic utterances in the Advanced tab:
 
 ```bash
 AUTO_TRIGGER_USE_SYNTHETIC_AUDIO=true
@@ -107,8 +117,7 @@ AUTO_TRIGGER_SYNTHETIC_AUDIO_MS=2500
 
 ## Current Behavior
 
-- The app supports single-turn mode when `SESSION_WINDOW_ENABLED=false`.
-- The app supports short multi-turn session-window mode when `SESSION_WINDOW_ENABLED=true`.
+- The app runs in short multi-turn session-window mode by default.
 - The current interaction model is half-duplex: the assistant listens for one turn, replies, then waits for the next turn.
 - In session-window mode, one wake word opens one Realtime session and keeps it alive across short follow-up turns.
 - The microphone is still locally gated per turn; it does not stay continuously open during reply playback.
@@ -119,9 +128,8 @@ AUTO_TRIGGER_SYNTHETIC_AUDIO_MS=2500
 - Ordinary date/time questions can usually be answered directly from the injected current timestamp; `local_time` remains available as a fallback for precise current-time checks in longer sessions.
 - When location is configured, the same city/region/country/timezone is also passed to `web_search` as approximate user location.
 
-Common session-window settings:
+Common multi-turn settings:
 
-- `SESSION_WINDOW_ENABLED=false` keeps the original single-turn flow
 - `SESSION_FOLLOWUP_TIMEOUT=6.0` controls how long follow-up turns wait for speech
 - `SESSION_MAX_TURNS=0` means unlimited turns until timeout or end phrase
 - `POST_REPLY_CUE_PATH=audio/ready_cue.wav` replays the ready cue after each completed reply by default
@@ -163,13 +171,13 @@ python scripts/probe_realtime_connect.py --attempts 20 --with-audio --audio-ms 2
 
 - The default playback path uses `aplay` with raw PCM.
 - Wake word detection still uses a local `.ppn` file.
-- Wake word sensitivity is controlled by `WAKE_WORD_SENSITIVITY` in the range `0.0` to `1.0`; higher values reduce misses but increase false triggers.
+- Wake word sensitivity is controlled by the Advanced tab key `wake_word_sensitivity` in the range `0.0` to `1.0`; higher values reduce misses but increase false triggers.
 - The default custom wake word path points to `Snowman_en_raspberry-pi_v4_0_0.ppn` in this directory.
 - The default ready cue uses `audio/ready_cue.wav`.
 - A post-reply cue can be configured with `POST_REPLY_CUE_PATH`; by default it reuses `audio/ready_cue.wav`.
 - A failure cue can be configured with `FAILURE_CUE_PATH`; by default it uses `audio/wake_chime.wav`.
 - The default playback device is auto-detected and prefers `Google voiceHAT`.
-- The default prompt lives in `snowman_realtime/config.py`; use `.env` overrides only if you intentionally want a custom prompt.
+- The default prompt lives in `snowman_realtime/config.py`, and the UI writes any override into `data/config.json`.
 - The default mode uses manual turn submission to Realtime instead of continuous server VAD.
 - The product interaction model is currently half-duplex rather than true barge-in during reply playback.
 - Model reply playback is software-attenuated with `OUTPUT_GAIN` to reduce speaker feedback on Raspberry Pi.

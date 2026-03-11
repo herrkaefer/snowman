@@ -50,6 +50,9 @@ temp_tts.wav
 # Local development
 .env.local
 .env.*.local
+realtime/secrets.json
+realtime/data/secrets.json
+realtime/data/backups/
 
 others/
 plans/

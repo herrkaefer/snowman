@@ -1,0 +1,227 @@
+from __future__ import annotations
+
+import json
+import os
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+from realtime.snowman_realtime.config import DEFAULT_SYSTEM_PROMPT, Settings
+from realtime.snowman_realtime.config_store import (
+    ConfigPaths,
+    config_updates_from_legacy_env,
+    default_public_config,
+    load_config_values,
+    merge_config_values,
+    missing_required_fields,
+    validate_config_values,
+    write_config_files,
+)
+from realtime.scripts.migrate_legacy_config import merge_config
+
+
+class ConfigStoreTests(unittest.TestCase):
+    def test_load_config_values_reads_config_and_secrets_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = Path(temp_dir)
+            data_dir.joinpath("config.json").write_text(
+                json.dumps(
+                    {
+                        "provider": "openai",
+                        "openai_voice": "shimmer",
+                        "system_prompt": "Saved prompt",
+                        "custom_wake_keyword_path": "/tmp/custom.ppn",
+                        "location_city": "Chicago",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            data_dir.joinpath("secrets.json").write_text(
+                json.dumps(
+                    {
+                        "openai_api_key": "saved-openai",
+                        "porcupine_access_key": "saved-porcupine",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch.dict(os.environ, {"SNOWMAN_DATA_DIR": temp_dir}, clear=False):
+                config_values = load_config_values(
+                    default_system_prompt=DEFAULT_SYSTEM_PROMPT,
+                )
+
+        self.assertEqual(config_values["openai_voice"], "shimmer")
+        self.assertEqual(config_values["system_prompt"], "Saved prompt")
+        self.assertEqual(config_values["custom_wake_keyword_path"], "/tmp/custom.ppn")
+        self.assertEqual(config_values["openai_api_key"], "saved-openai")
+        self.assertEqual(config_values["porcupine_access_key"], "saved-porcupine")
+        self.assertEqual(config_values["location_city"], "Chicago")
+
+    def test_merge_blank_secret_preserves_current_secret(self) -> None:
+        merged = merge_config_values(
+            {
+                "provider": "openai",
+                "openai_voice": "alloy",
+                "system_prompt": "Prompt",
+                "custom_wake_keyword_path": "",
+                "location_city": "",
+                "location_region": "",
+                "location_country_code": "",
+                "location_timezone": "",
+                "openai_api_key": "existing-openai",
+                "porcupine_access_key": "existing-porcupine",
+                "admin_password": "existing-admin",
+                "advanced": {},
+            },
+            {
+                "openai_api_key": "   ",
+                "porcupine_access_key": "",
+                "system_prompt": "Updated prompt",
+            },
+        )
+
+        self.assertEqual(merged["openai_api_key"], "existing-openai")
+        self.assertEqual(merged["porcupine_access_key"], "existing-porcupine")
+        self.assertEqual(merged["system_prompt"], "Updated prompt")
+
+    def test_load_config_values_uses_defaults_when_files_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch.dict(os.environ, {"SNOWMAN_DATA_DIR": temp_dir}, clear=False):
+                config_values = load_config_values(
+                    default_system_prompt=DEFAULT_SYSTEM_PROMPT,
+                )
+
+        self.assertEqual(config_values["openai_api_key"], "")
+        self.assertEqual(config_values["porcupine_access_key"], "")
+        self.assertEqual(config_values["system_prompt"], DEFAULT_SYSTEM_PROMPT)
+        self.assertEqual(config_values["openai_voice"], "alloy")
+
+    def test_validation_reports_missing_required_fields(self) -> None:
+        errors = validate_config_values(
+            {
+                "provider": "",
+                "openai_api_key": "",
+                "porcupine_access_key": "",
+                "openai_voice": "",
+                "system_prompt": "",
+                "advanced": {},
+            }
+        )
+
+        self.assertGreaterEqual(len(errors), 5)
+        self.assertIn("provider", missing_required_fields({"provider": "gemini"}))
+
+    def test_write_config_files_persists_json_and_secrets(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            paths = ConfigPaths(
+                data_dir=Path(temp_dir),
+                config_path=Path(temp_dir) / "config.json",
+                secrets_path=Path(temp_dir) / "secrets.json",
+            )
+            write_config_files(
+                paths,
+                {
+                    "provider": "openai",
+                    "openai_voice": "shimmer",
+                    "system_prompt": "Prompt",
+                    "custom_wake_keyword_path": "/tmp/custom.ppn",
+                    "location_city": "Chicago",
+                    "location_region": "IL",
+                    "location_country_code": "US",
+                    "location_timezone": "America/Chicago",
+                    "openai_api_key": "test-openai",
+                    "porcupine_access_key": "test-porcupine",
+                    "admin_password": "admin-pass",
+                    "advanced": {},
+                },
+            )
+
+            config_payload = json.loads(paths.config_path.read_text(encoding="utf-8"))
+            secrets_payload = json.loads(paths.secrets_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(config_payload["openai_voice"], "shimmer")
+        self.assertEqual(config_payload["custom_wake_keyword_path"], "/tmp/custom.ppn")
+        self.assertEqual(secrets_payload["openai_api_key"], "test-openai")
+        self.assertEqual(secrets_payload["admin_password"], "admin-pass")
+
+    def test_config_updates_from_legacy_env_parses_advanced_values(self) -> None:
+        updates = config_updates_from_legacy_env(
+            {
+                "OPENAI_VOICE": "nova",
+                "OPENAI_REALTIME_MODEL": "gpt-realtime",
+                "WAKE_WORD_SENSITIVITY": "0.75",
+                "INPUT_NS_ENABLED": "true",
+                "RESPONSE_MAX_OUTPUT_TOKENS": "1024",
+            }
+        )
+
+        self.assertEqual(updates["openai_voice"], "nova")
+        self.assertEqual(updates["advanced"]["openai_realtime_model"], "gpt-realtime")
+        self.assertEqual(updates["advanced"]["wake_word_sensitivity"], 0.75)
+        self.assertTrue(updates["advanced"]["input_ns_enabled"])
+        self.assertEqual(updates["advanced"]["response_max_output_tokens"], 1024)
+
+    def test_default_public_config_uses_current_advanced_defaults(self) -> None:
+        payload = default_public_config(default_system_prompt=DEFAULT_SYSTEM_PROMPT)
+        self.assertEqual(payload["advanced"]["openai_realtime_model"], "gpt-realtime")
+
+    def test_legacy_advanced_overrides_default_values_during_migration(self) -> None:
+        defaults = default_public_config(default_system_prompt=DEFAULT_SYSTEM_PROMPT)
+        merged = merge_config(
+            defaults,
+            {
+                "advanced": {
+                    "wake_word_sensitivity": 0.6,
+                    "output_gain": 0.35,
+                }
+            },
+        )
+
+        self.assertEqual(merged["advanced"]["wake_word_sensitivity"], 0.6)
+        self.assertEqual(merged["advanced"]["output_gain"], 0.35)
+
+
+class SettingsConfigTests(unittest.TestCase):
+    def test_settings_load_uses_config_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = Path(temp_dir)
+            custom_ppn_path = data_dir / "custom.ppn"
+            custom_ppn_path.write_bytes(b"test")
+            data_dir.joinpath("config.json").write_text(
+                json.dumps(
+                    {
+                        "provider": "openai",
+                        "openai_voice": "shimmer",
+                        "system_prompt": "Saved prompt",
+                        "custom_wake_keyword_path": str(custom_ppn_path),
+                    }
+                ),
+                encoding="utf-8",
+            )
+            data_dir.joinpath("secrets.json").write_text(
+                json.dumps(
+                    {
+                        "openai_api_key": "saved-openai",
+                        "porcupine_access_key": "saved-porcupine",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch.dict(os.environ, {"SNOWMAN_DATA_DIR": temp_dir}, clear=False):
+                settings = Settings.load()
+
+        self.assertEqual(settings.provider, "openai")
+        self.assertEqual(settings.openai_voice, "shimmer")
+        self.assertEqual(settings.system_prompt, "Saved prompt")
+        self.assertTrue(settings.session_window_enabled)
+        self.assertEqual(settings.custom_wake_keyword_path, str(custom_ppn_path))
+        self.assertEqual(settings.openai_api_key, "saved-openai")
+        self.assertEqual(settings.porcupine_access_key, "saved-porcupine")
+        self.assertEqual(settings.openai_realtime_model, "gpt-realtime")
+
+
+if __name__ == "__main__":
+    unittest.main()
