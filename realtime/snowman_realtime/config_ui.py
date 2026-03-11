@@ -422,11 +422,11 @@ HTML_PAGE = """<!doctype html>
         <input id="wake_word_sensitivity" type="number" min="0" max="1" step="0.05" placeholder="0.5">
         <div class="hint">Use a value from 0.0 to 1.0. Higher values reduce misses but increase false triggers.</div>
 
-        <label for="output_gain">Reply Volume (`output_gain`)</label>
+        <label for="output_gain">Reply Volume</label>
         <input id="output_gain" type="number" min="0" step="0.05" placeholder="0.5">
         <div class="hint">Controls assistant speech playback loudness. `1.0` is original volume, `0.5` is half volume. Recommended: `0.2` to `1.0`.</div>
 
-        <label for="cue_output_gain">Cue Volume (`cue_output_gain`)</label>
+        <label for="cue_output_gain">Cue Volume</label>
         <input id="cue_output_gain" type="number" min="0" step="0.05" placeholder="0.22">
         <div class="hint">Controls short cue sounds such as ready and end chimes. `1.0` is original volume. Recommended: `0.2` to `1.2`.</div>
       </section>
