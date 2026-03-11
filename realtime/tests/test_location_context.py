@@ -43,7 +43,7 @@ class LocationContextTests(unittest.TestCase):
         )
 
         self.assertIn(
-            "Your location is Chicago, IL, US.",
+            "Your current default location, and the user's default location unless they specify otherwise, is Chicago, IL, US.",
             instructions,
         )
         self.assertIn("Your name is Snowman.", instructions)
@@ -100,7 +100,10 @@ class LocationContextTests(unittest.TestCase):
             country_code="US",
         )
 
-        self.assertIn("Your location is W Belmont Ave, Chicago, IL, US.", prompt)
+        self.assertIn(
+            "Your current default location, and the user's default location unless they specify otherwise, is W Belmont Ave, Chicago, IL, US.",
+            prompt,
+        )
 
     def test_web_search_uses_configured_location(self) -> None:
         settings = SimpleNamespace(

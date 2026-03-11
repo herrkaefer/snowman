@@ -6,7 +6,7 @@ APP_DIR="${APP_DIR:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
 SERVICE_NAME="${SERVICE_NAME:-snowman-realtime.service}"
 LOG_PATH="${LOG_PATH:-${APP_DIR}/realtime.log}"
 MAX_HEARTBEAT_AGE_SECONDS="${MAX_HEARTBEAT_AGE_SECONDS:-300}"
-MAIN_PATTERN="${MAIN_PATTERN:-${APP_DIR}/venv/bin/python3 -u -m snowman_realtime}"
+MAIN_PATTERN="${MAIN_PATTERN:-^${APP_DIR}/venv/bin/python3 -u -m snowman_realtime$}"
 WINDOW_CHECK_SCRIPT="${WINDOW_CHECK_SCRIPT:-${APP_DIR}/scripts/within_runtime_window.sh}"
 
 if ! "${WINDOW_CHECK_SCRIPT}"; then

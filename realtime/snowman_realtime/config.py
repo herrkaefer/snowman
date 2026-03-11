@@ -92,9 +92,8 @@ def build_location_prompt_context(
     if not parts:
         return ""
     return (
-        f"Your location is {', '.join(parts)}. "
-        "Use this as the default location for local questions such as weather, nearby places, traffic, commute, and other ambiguous location-dependent requests. "
-        "If the user explicitly names a different place, use the user-provided location instead."
+        f"Your current default location, and the user's default location unless they specify otherwise, is {', '.join(parts)}. "
+        "If the user explicitly gives a different location, use the user-provided location instead."
     )
 
 
