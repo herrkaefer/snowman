@@ -8,7 +8,7 @@
   "wake_word_sensitivity": 0.6,
   "output_gain": 0.35,
   "cue_output_gain": 0.78,
-  "custom_wake_keyword_path": "/home/snowman/voice-assistant-realtime/data/wake_words/Snowman_en_raspberry-pi_v4_0_0.ppn",
+  "custom_wake_keyword_path": "",
   "location_city": "Chicago",
   "location_region": "IL",
   "location_country_code": "US",

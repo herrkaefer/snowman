@@ -182,7 +182,7 @@ python scripts/probe_realtime_connect.py --attempts 20 --with-audio --audio-ms 2
 - The default playback path uses `aplay` with raw PCM.
 - Wake word detection still uses a local `.ppn` file.
 - Wake word sensitivity is controlled by the Basic tab field `wake_word_sensitivity` in the range `0.0` to `1.0`; higher values reduce misses but increase false triggers.
-- The default custom wake word path points to `Snowman_en_raspberry-pi_v4_0_0.ppn` in this directory.
+- Snowman no longer ships with a default `.ppn` file; users should upload their own custom wake word model from Picovoice Console.
 - The default ready cue uses `audio/ready_cue.wav`.
 - A post-reply cue can be configured with the Advanced tab key `post_reply_cue_path`; by default it reuses `audio/ready_cue.wav`.
 - A failure cue can be configured with the Advanced tab key `failure_cue_path`; by default it uses `audio/wake_chime.wav`.

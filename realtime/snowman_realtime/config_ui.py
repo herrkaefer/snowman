@@ -338,6 +338,10 @@ HTML_PAGE = """<!doctype html>
       font-size: 0.85rem;
       line-height: 1.45;
     }
+    .hint a {
+      color: var(--ink);
+      font-weight: 700;
+    }
     button {
       border: 3px solid var(--line);
       padding: 13px 18px;
@@ -489,14 +493,15 @@ HTML_PAGE = """<!doctype html>
         </div>
         <input id="porcupine_access_key" type="text" autocomplete="off" spellcheck="false" placeholder="Enter a new key or leave blank to keep the current one">
         <div id="porcupine_access_key_hint" class="hint"></div>
+        <div class="hint">Get your key from <a href="https://console.picovoice.ai/" target="_blank" rel="noreferrer">Picovoice Console</a>. Create a Porcupine access key there, then paste it here.</div>
 
-        <label for="wake_word_model">Wake Word Model (.ppn)</label>
+        <label class="required" for="wake_word_model">Wake Word Model (.ppn)</label>
         <input id="custom_wake_keyword_path" type="hidden">
         <div class="file-row">
           <input id="wake_word_model" type="file" accept=".ppn">
           <button id="upload_wake_word_model" class="secondary" type="button">Upload</button>
         </div>
-        <div id="wake_word_model_hint" class="hint">Using the built-in default wake word model.</div>
+        <div id="wake_word_model_hint" class="hint">Required. Snowman no longer ships with a default wake word model. Upload your own `.ppn` file from Picovoice Console. Porcupine also supports official built-in wake words such as `porcupine` and `jarvis`, but Snowman does not expose that mode yet.</div>
 
         <label for="wake_word_sensitivity">Wake Word Sensitivity</label>
         <input id="wake_word_sensitivity" type="number" min="0" max="1" step="0.05" placeholder="0.5">
@@ -633,7 +638,7 @@ HTML_PAGE = """<!doctype html>
       );
       $("wake_word_model_hint").textContent = config.custom_wake_keyword_configured
         ? `Uploaded model: ${config.custom_wake_keyword_name}`
-        : "Using the built-in default wake word model.";
+        : "Required. Upload your own .ppn wake word model from Picovoice Console.";
       autoGrowPrompt();
       autoGrowAdvanced();
     }

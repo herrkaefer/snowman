@@ -61,6 +61,7 @@ REQUIRED_FIELD_ERRORS = {
     "provider": "AI provider is required.",
     "openai_api_key": "API key is required.",
     "porcupine_access_key": "Porcupine access key is required.",
+    "custom_wake_keyword_path": "Wake word model (.ppn) is required.",
     "openai_realtime_model": "Realtime model is required.",
     "openai_voice": "Voice is required.",
     "system_prompt": "Prompt is required.",
@@ -317,7 +318,14 @@ def validate_config_values(payload: dict[str, object]) -> list[str]:
     elif provider != SUPPORTED_PROVIDER:
         errors.append(f"Unsupported provider: {provider}. Only openai is currently available.")
 
-    for key in ("openai_api_key", "porcupine_access_key", "openai_realtime_model", "openai_voice", "system_prompt"):
+    for key in (
+        "openai_api_key",
+        "porcupine_access_key",
+        "custom_wake_keyword_path",
+        "openai_realtime_model",
+        "openai_voice",
+        "system_prompt",
+    ):
         value = payload.get(key, "")
         if not isinstance(value, str) or not value.strip():
             errors.append(REQUIRED_FIELD_ERRORS[key])
@@ -379,7 +387,14 @@ def missing_required_fields(payload: dict[str, object]) -> list[str]:
     if not provider or provider != SUPPORTED_PROVIDER:
         missing.append("provider")
 
-    for key in ("openai_api_key", "porcupine_access_key", "openai_realtime_model", "openai_voice", "system_prompt"):
+    for key in (
+        "openai_api_key",
+        "porcupine_access_key",
+        "custom_wake_keyword_path",
+        "openai_realtime_model",
+        "openai_voice",
+        "system_prompt",
+    ):
         value = payload.get(key, "")
         if not isinstance(value, str) or not value.strip():
             missing.append(key)

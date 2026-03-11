@@ -10,7 +10,6 @@ from .config_store import load_config_values
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 AUDIO_DIR = BASE_DIR / "audio"
-DEFAULT_WAKE_WORD_PATH = BASE_DIR / "Snowman_en_raspberry-pi_v4_0_0.ppn"
 DEFAULT_READY_CUE_PATH = AUDIO_DIR / "ready_cue.wav"
 DEFAULT_FAILURE_CUE_PATH = AUDIO_DIR / "wake_chime.wav"
 DEFAULT_SESSION_END_CUE_PATH = AUDIO_DIR / "end_cue.wav"
@@ -227,6 +226,10 @@ class Settings:
         if not porcupine_access_key:
             raise ConfigError("PORCUPINE_ACCESS_KEY is required in config.json and secrets.json")
 
+        custom_wake_keyword_path = str(config_values["custom_wake_keyword_path"]).strip()
+        if not custom_wake_keyword_path:
+            raise ConfigError("CUSTOM_WAKE_KEYWORD_PATH is required in config.json")
+
         return cls(
             agent_name=str(config_values["agent_name"]).strip() or "Snowman",
             provider=provider,
@@ -237,12 +240,7 @@ class Settings:
             input_transcription_model=_get_str(advanced, "input_transcription_model", "gpt-4o-mini-transcribe"),
             openai_beta_header=_get_str(advanced, "openai_beta_header", "realtime=v1"),
             porcupine_access_key=porcupine_access_key,
-            custom_wake_keyword_path=str(
-                _resolve_path(
-                    str(config_values["custom_wake_keyword_path"]).strip()
-                    or str(DEFAULT_WAKE_WORD_PATH)
-                )
-            ),
+            custom_wake_keyword_path=str(_resolve_path(custom_wake_keyword_path)),
             wake_word_sensitivity=float(config_values["wake_word_sensitivity"]),
             audio_device_index=_get_int(advanced, "audio_device_index", -1),
             input_frame_length=_get_int(advanced, "input_frame_length", 512),
@@ -332,14 +330,6 @@ def _resolve_path(raw_path: str) -> Path:
         resolved = path
     else:
         resolved = (BASE_DIR / path).resolve()
-
-    if resolved.exists():
-        return resolved
-
-    latest_matching = sorted(BASE_DIR.glob("Snowman_en_raspberry-pi_v*_*.ppn"))
-    if latest_matching:
-        return latest_matching[-1].resolve()
-
     return resolved
 
 
