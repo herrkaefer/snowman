@@ -29,6 +29,8 @@ from .config_store import (
     validate_config_values,
     write_config_files,
 )
+from .memory import MemoryStore
+from .tools import build_tool_definitions
 from .version import VERSION
 
 
@@ -384,6 +386,29 @@ HTML_PAGE = """<!doctype html>
       background: var(--good-soft);
       color: var(--good);
     }
+    .stack {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 18px;
+    }
+    .tool-list {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+    .tool-item {
+      padding: 14px;
+      border: 3px solid var(--line);
+      background: rgba(255, 255, 255, 0.72);
+    }
+    .tool-item h3 {
+      margin: 0 0 6px;
+      font-size: 0.96rem;
+      text-transform: uppercase;
+    }
+    .tool-item p {
+      margin: 0;
+    }
     .hidden { display: none; }
     @media (max-width: 720px) {
       .wrap { padding: 22px 12px 38px; }
@@ -420,36 +445,15 @@ HTML_PAGE = """<!doctype html>
     </div>
 
     <div class="tabs">
-      <button id="tab_basic" class="tab active" type="button">Basic</button>
+      <button id="tab_identity" class="tab active" type="button">Identity</button>
+      <button id="tab_ai" class="tab" type="button">AI</button>
+      <button id="tab_audio" class="tab" type="button">Audio</button>
+      <button id="tab_tools" class="tab" type="button">Tools</button>
+      <button id="tab_memory" class="tab" type="button">Memory</button>
       <button id="tab_advanced" class="tab" type="button">Advanced</button>
     </div>
 
-    <div id="panel_basic" class="grid">
-      <section class="card">
-        <h2>AI Provider</h2>
-        <p>Choose the AI provider and its current model, API key, and voice settings.</p>
-        <label class="required" for="provider">Provider</label>
-        <select id="provider"></select>
-
-        <div class="field-head">
-          <label class="required" for="openai_api_key">API Key</label>
-          <div id="openai_api_key_state" class="secret-state missing">Missing</div>
-        </div>
-        <input id="openai_api_key" type="text" autocomplete="off" spellcheck="false" placeholder="Enter a new key or leave blank to keep the current one">
-        <div id="openai_api_key_hint" class="hint"></div>
-
-        <div class="split-fields">
-          <div>
-            <label class="required" for="openai_realtime_model">Realtime Model</label>
-            <select id="openai_realtime_model"></select>
-          </div>
-          <div>
-            <label class="required" for="openai_voice">Voice</label>
-            <select id="openai_voice"></select>
-          </div>
-        </div>
-      </section>
-
+    <div id="panel_identity" class="grid">
       <section class="card">
         <h2>Identity</h2>
         <p>Set the assistant's name, default local context, and speaking instructions.</p>
@@ -483,7 +487,36 @@ HTML_PAGE = """<!doctype html>
         <label class="required" for="system_prompt">Prompt</label>
         <textarea id="system_prompt"></textarea>
       </section>
+    </div>
 
+    <div id="panel_ai" class="grid hidden">
+      <section class="card">
+        <h2>AI Provider</h2>
+        <p>Choose the AI provider and its current model, API key, and voice settings.</p>
+        <label class="required" for="provider">Provider</label>
+        <select id="provider"></select>
+
+        <div class="field-head">
+          <label class="required" for="openai_api_key">API Key</label>
+          <div id="openai_api_key_state" class="secret-state missing">Missing</div>
+        </div>
+        <input id="openai_api_key" type="text" autocomplete="off" spellcheck="false" placeholder="Enter a new key or leave blank to keep the current one">
+        <div id="openai_api_key_hint" class="hint"></div>
+
+        <div class="split-fields">
+          <div>
+            <label class="required" for="openai_realtime_model">Realtime Model</label>
+            <select id="openai_realtime_model"></select>
+          </div>
+          <div>
+            <label class="required" for="openai_voice">Voice</label>
+            <select id="openai_voice"></select>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div id="panel_audio" class="grid hidden">
       <section class="card">
         <h2>Wake Word & Audio</h2>
         <p>Set wake word detection and playback loudness for speech replies and short cue sounds.</p>
@@ -544,6 +577,38 @@ HTML_PAGE = """<!doctype html>
         <p>Edit the JSON directly if you need to tune models, audio devices, turn timing, gain, retries, or health checks.</p>
         <label for="advanced_json">Advanced Settings JSON</label>
         <textarea id="advanced_json"></textarea>
+      </section>
+    </div>
+
+    <div id="panel_tools" class="grid hidden">
+      <section class="card">
+        <h2>Tools</h2>
+        <p>Inspect the currently available runtime tools. Memory tools appear when memory is enabled.</p>
+        <div id="tools_list" class="tool-list"></div>
+      </section>
+    </div>
+
+    <div id="panel_memory" class="grid hidden">
+      <section class="card">
+        <h2>Memory</h2>
+        <p>Inspect and edit profile memory. `MEMORY.md` is generated automatically and shown read-only as the prompt-visible memory index.</p>
+        <div id="memory_status" class="hint"></div>
+        <div class="stack">
+          <div>
+            <div class="field-head">
+              <label for="profile_markdown">profile.md</label>
+              <button id="save_profile_memory" class="secondary" type="button">Save</button>
+            </div>
+            <textarea id="profile_markdown"></textarea>
+          </div>
+          <div>
+            <div class="field-head">
+              <label for="memory_index_markdown">MEMORY.md</label>
+              <button id="save_memory_index" class="secondary" type="button">Save</button>
+            </div>
+            <textarea id="memory_index_markdown" readonly></textarea>
+          </div>
+        </div>
       </section>
     </div>
 
@@ -643,6 +708,28 @@ HTML_PAGE = """<!doctype html>
       autoGrowAdvanced();
     }
 
+    function renderTools(tools) {
+      const items = Array.isArray(tools) ? tools : [];
+      $("tools_list").innerHTML = items
+        .map((tool) => `
+          <div class="tool-item">
+            <h3>${tool.name}</h3>
+            <p>${tool.description}</p>
+          </div>
+        `)
+        .join("");
+    }
+
+    function populateMemory(memory) {
+      $("profile_markdown").value = memory.profile_markdown || "";
+      $("memory_index_markdown").value = memory.memory_index_markdown || "";
+      $("memory_status").textContent = memory.memory_enabled
+        ? `Memory is enabled. Storage: ${memory.memory_dir}`
+        : `Memory is disabled in runtime config. You can still inspect and edit files here. Storage: ${memory.memory_dir}`;
+      autoGrowProfile();
+      autoGrowMemoryIndex();
+    }
+
     function renderSelectOptions(id, values, selectedValue, labels = {}) {
       const select = $(id);
       const options = Array.isArray(values) ? values : [];
@@ -714,12 +801,16 @@ HTML_PAGE = """<!doctype html>
     }
 
     async function refresh() {
-      const [config, status] = await Promise.all([
+      const [config, status, tools, memory] = await Promise.all([
         readJson("/api/config"),
-        readJson("/api/status")
+        readJson("/api/status"),
+        readJson("/api/tools"),
+        readJson("/api/memory")
       ]);
       populateForm(config.config);
       renderStatus(status);
+      renderTools(tools.tools);
+      populateMemory(memory);
       setMessage("Configuration loaded.", "good");
     }
 
@@ -760,6 +851,9 @@ HTML_PAGE = """<!doctype html>
         });
         populateForm(result.config);
         renderStatus(result.status);
+        renderTools(result.tools || []);
+        const memory = await readJson("/api/memory");
+        populateMemory(memory);
         setMessage(result.message, "good");
       } catch (error) {
         setMessage(error.message, "warn");
@@ -841,6 +935,34 @@ HTML_PAGE = """<!doctype html>
       }
     }
 
+    async function saveProfileMemory() {
+      try {
+        const result = await readJson("/api/memory/profile", {
+          method: "POST",
+          body: JSON.stringify({
+            profile_markdown: $("profile_markdown").value
+          })
+        });
+        populateMemory(result);
+        setMessage("Profile memory saved.", "good");
+      } catch (error) {
+        setMessage(error.message, "warn");
+      }
+    }
+
+    async function saveMemoryIndex() {
+      try {
+        const result = await readJson("/api/memory/index", {
+          method: "POST",
+          body: JSON.stringify({})
+        });
+        populateMemory(result);
+        setMessage("Memory index regenerated.", "good");
+      } catch (error) {
+        setMessage(error.message, "warn");
+      }
+    }
+
     function autoGrowPrompt() {
       const textarea = $("system_prompt");
       textarea.style.height = "auto";
@@ -853,14 +975,31 @@ HTML_PAGE = """<!doctype html>
       textarea.style.height = `${textarea.scrollHeight}px`;
     }
 
+    function autoGrowProfile() {
+      const textarea = $("profile_markdown");
+      textarea.style.height = "auto";
+      textarea.style.height = `${textarea.scrollHeight}px`;
+    }
+
+    function autoGrowMemoryIndex() {
+      const textarea = $("memory_index_markdown");
+      textarea.style.height = "auto";
+      textarea.style.height = `${textarea.scrollHeight}px`;
+    }
+
     function showTab(name) {
-      const basic = name === "basic";
-      $("panel_basic").classList.toggle("hidden", !basic);
-      $("panel_advanced").classList.toggle("hidden", basic);
-      $("tab_basic").classList.toggle("active", basic);
-      $("tab_advanced").classList.toggle("active", !basic);
-      if (!basic) {
+      const panels = ["identity", "ai", "audio", "tools", "memory", "advanced"];
+      for (const panel of panels) {
+        const active = panel === name;
+        $("panel_" + panel).classList.toggle("hidden", !active);
+        $("tab_" + panel).classList.toggle("active", active);
+      }
+      if (name === "advanced") {
         requestAnimationFrame(autoGrowAdvanced);
+      }
+      if (name === "memory") {
+        requestAnimationFrame(autoGrowProfile);
+        requestAnimationFrame(autoGrowMemoryIndex);
       }
     }
 
@@ -871,8 +1010,16 @@ HTML_PAGE = """<!doctype html>
     $("test_microphone").addEventListener("click", testMicrophone);
     $("system_prompt").addEventListener("input", autoGrowPrompt);
     $("advanced_json").addEventListener("input", autoGrowAdvanced);
-    $("tab_basic").addEventListener("click", () => showTab("basic"));
+    $("profile_markdown").addEventListener("input", autoGrowProfile);
+    $("memory_index_markdown").addEventListener("input", autoGrowMemoryIndex);
+    $("tab_identity").addEventListener("click", () => showTab("identity"));
+    $("tab_ai").addEventListener("click", () => showTab("ai"));
+    $("tab_audio").addEventListener("click", () => showTab("audio"));
     $("tab_advanced").addEventListener("click", () => showTab("advanced"));
+    $("tab_tools").addEventListener("click", () => showTab("tools"));
+    $("tab_memory").addEventListener("click", () => showTab("memory"));
+    $("save_profile_memory").addEventListener("click", saveProfileMemory);
+    $("save_memory_index").addEventListener("click", saveMemoryIndex);
     refresh().catch((error) => {
       setMessage(error.message, "warn");
     });
@@ -903,6 +1050,12 @@ class ConfigUIHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/config":
             self._write_json({"config": _config_payload_for_api(_load_config())})
+            return
+        if parsed.path == "/api/tools":
+            self._write_json({"tools": _tool_payload_for_api(_load_config())})
+            return
+        if parsed.path == "/api/memory":
+            self._write_json(_memory_payload_for_api(_load_config()))
             return
         if parsed.path == "/api/setup-state":
             self._write_json(_status_payload())
@@ -945,6 +1098,17 @@ class ConfigUIHandler(BaseHTTPRequestHandler):
                 return
             self._write_json(result)
             return
+        if parsed.path == "/api/memory/profile":
+            try:
+                result = _update_profile_memory(_load_config(), body)
+            except RuntimeError as exc:
+                self._write_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
+            self._write_json(result)
+            return
+        if parsed.path == "/api/memory/index":
+            self._write_json(_memory_payload_for_api(_load_config()))
+            return
 
         merged = merge_config_values(_load_config(), body)
         if parsed.path == "/api/config/validate":
@@ -979,6 +1143,7 @@ class ConfigUIHandler(BaseHTTPRequestHandler):
                 {
                     "message": self.server.last_apply_message,
                     "config": _config_payload_for_api(_load_config()),
+                    "tools": _tool_payload_for_api(_load_config()),
                     "status": _status_payload(last_apply_message=self.server.last_apply_message),
                 }
             )
@@ -1071,7 +1236,59 @@ def _config_payload_for_api(config_payload: dict[str, object]) -> dict[str, obje
     payload = config_values_for_api(config_payload)
     payload["audio_input_options"] = _audio_input_options()
     payload["audio_output_options"] = _audio_output_options()
+    advanced = payload.get("advanced", {})
+    payload["memory_enabled"] = bool(advanced.get("memory_enabled", False)) if isinstance(advanced, dict) else False
     return payload
+
+
+def _tool_payload_for_api(config_payload: dict[str, object]) -> list[dict[str, str]]:
+    advanced = config_payload.get("advanced", {})
+    memory_enabled = bool(advanced.get("memory_enabled", False)) if isinstance(advanced, dict) else False
+    return [
+        {
+            "name": definition.name,
+            "description": definition.description,
+        }
+        for definition in build_tool_definitions(memory_enabled=memory_enabled)
+    ]
+
+
+def _memory_store_for_config(config_payload: dict[str, object]) -> MemoryStore:
+    advanced = config_payload.get("advanced", {})
+    raw_dir = "state/memory"
+    if isinstance(advanced, dict):
+        raw_dir = str(advanced.get("memory_dir", raw_dir)).strip() or raw_dir
+    return MemoryStore(APP_DIR / raw_dir if not Path(raw_dir).is_absolute() else Path(raw_dir))
+
+
+def _memory_payload_for_api(config_payload: dict[str, object]) -> dict[str, object]:
+    store = _memory_store_for_config(config_payload)
+    store.ensure_initialized()
+    advanced = config_payload.get("advanced", {})
+    memory_enabled = bool(advanced.get("memory_enabled", False)) if isinstance(advanced, dict) else False
+    return {
+        "memory_enabled": memory_enabled,
+        "memory_dir": str(store.paths.base_dir),
+        "profile_path": str(store.paths.profile_path),
+        "memory_index_path": str(store.paths.index_path),
+        "profile_markdown": store.read_profile(),
+        "memory_index_markdown": store.read_memory_index(),
+    }
+
+
+def _update_profile_memory(
+    config_payload: dict[str, object],
+    body: dict[str, object],
+) -> dict[str, object]:
+    profile_markdown = str(body.get("profile_markdown", ""))
+    if not profile_markdown.strip():
+        raise RuntimeError("profile_markdown is required.")
+    store = _memory_store_for_config(config_payload)
+    try:
+        store.update_profile(profile_markdown)
+    except RuntimeError as exc:
+        raise RuntimeError(str(exc)) from exc
+    return _memory_payload_for_api(config_payload)
 
 
 def _status_payload(

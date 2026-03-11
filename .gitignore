@@ -53,6 +53,7 @@ temp_tts.wav
 realtime/secrets.json
 realtime/data/secrets.json
 realtime/data/backups/
+realtime/state/
 
 others/
 plans/

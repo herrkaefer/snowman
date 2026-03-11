@@ -8,6 +8,7 @@ from typing import Any
 from urllib import error, request
 
 from .config import Settings, build_web_search_user_location
+from .memory import MemoryStore, MemoryValidationError
 
 
 LOGGER = logging.getLogger(__name__)
@@ -20,41 +21,88 @@ class ToolDefinition:
     parameters: dict[str, Any] = field(default_factory=dict)
 
 
+def build_tool_definitions(*, memory_enabled: bool) -> list[ToolDefinition]:
+    definitions = [
+        ToolDefinition(
+            name="local_time",
+            description=(
+                "Get the exact current local time on the Raspberry Pi. "
+                "Use this only when the provided session timestamp may be stale or the user explicitly wants the precise current time."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            },
+        ),
+        ToolDefinition(
+            name="web_search",
+            description=(
+                "Search the web for current or changing information. "
+                "Required for recent facts and time-sensitive questions such as current officeholders, news, weather, prices, laws, schedules, standings, or anything asked as current, latest, today, now, or recent."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The web search query to look up.",
+                    }
+                },
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+        ),
+    ]
+    if memory_enabled:
+        definitions.extend(
+            [
+                ToolDefinition(
+                    name="profile_memory_get",
+                    description=(
+                        "Load the full profile memory document containing stable facts about people, preferences, and household context."
+                    ),
+                    parameters={
+                        "type": "object",
+                        "properties": {},
+                        "additionalProperties": False,
+                    },
+                ),
+                ToolDefinition(
+                    name="profile_memory_update",
+                    description=(
+                        "Replace the full profile memory document with updated Markdown. "
+                        "Use this after reading the current profile memory when you need to add, correct, or remove stable profile facts."
+                    ),
+                    parameters={
+                        "type": "object",
+                        "properties": {
+                            "updated_markdown": {
+                                "type": "string",
+                                "description": "The complete updated profile memory Markdown document.",
+                            }
+                        },
+                        "required": ["updated_markdown"],
+                        "additionalProperties": False,
+                    },
+                ),
+            ]
+        )
+    return definitions
+
+
 class ToolRegistry:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
-        self._definitions = [
-            ToolDefinition(
-                name="local_time",
-                description=(
-                    "Get the exact current local time on the Raspberry Pi. "
-                    "Use this only when the provided session timestamp may be stale or the user explicitly wants the precise current time."
-                ),
-                parameters={
-                    "type": "object",
-                    "properties": {},
-                    "additionalProperties": False,
-                },
-            ),
-            ToolDefinition(
-                name="web_search",
-                description=(
-                    "Search the web for current or changing information. "
-                    "Required for recent facts and time-sensitive questions such as current officeholders, news, weather, prices, laws, schedules, standings, or anything asked as current, latest, today, now, or recent."
-                ),
-                parameters={
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "The web search query to look up.",
-                        }
-                    },
-                    "required": ["query"],
-                    "additionalProperties": False,
-                },
-            ),
-        ]
+        memory_enabled = bool(getattr(settings, "memory_enabled", False))
+        self._definitions = build_tool_definitions(memory_enabled=memory_enabled)
+        self._memory_store = (
+            MemoryStore.from_path(str(getattr(settings, "memory_dir", "")))
+            if memory_enabled
+            else None
+        )
+        if self._memory_store is not None:
+            self._memory_store.ensure_initialized()
 
     @property
     def tools(self) -> list[ToolDefinition]:
@@ -84,6 +132,16 @@ class ToolRegistry:
             if not query:
                 raise RuntimeError("web_search requires a non-empty query")
             return json.dumps(self._web_search(query), ensure_ascii=False)
+        if name == "profile_memory_get":
+            return json.dumps(self._profile_memory_get(), ensure_ascii=False)
+        if name == "profile_memory_update":
+            updated_markdown = str(arguments.get("updated_markdown", ""))
+            if not updated_markdown.strip():
+                raise RuntimeError("profile_memory_update requires updated_markdown")
+            return json.dumps(
+                self._profile_memory_update(updated_markdown),
+                ensure_ascii=False,
+            )
         raise RuntimeError(f"Unknown tool: {name}")
 
     def _local_time(self) -> dict[str, Any]:
@@ -139,6 +197,25 @@ class ToolRegistry:
             "query": query,
             "summary": summary,
             "sources": sources[:3],
+        }
+
+    def _profile_memory_get(self) -> dict[str, Any]:
+        if self._memory_store is None:
+            raise RuntimeError("profile memory is not enabled")
+        return {
+            "profile_markdown": self._memory_store.read_profile(),
+        }
+
+    def _profile_memory_update(self, updated_markdown: str) -> dict[str, Any]:
+        if self._memory_store is None:
+            raise RuntimeError("profile memory is not enabled")
+        try:
+            saved = self._memory_store.update_profile(updated_markdown)
+        except MemoryValidationError as exc:
+            raise RuntimeError(str(exc)) from exc
+        return {
+            "status": "updated",
+            "profile_markdown": saved,
         }
 
     def _extract_response_text(self, payload: dict[str, Any]) -> str:

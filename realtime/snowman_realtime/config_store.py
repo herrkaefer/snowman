@@ -125,6 +125,8 @@ DEFAULT_ADVANCED_CONFIG: dict[str, object] = {
     "realtime_connect_retries": 2,
     "realtime_retry_backoff_seconds": 0.75,
     "realtime_retry_backoff_max_seconds": 3.0,
+    "memory_enabled": False,
+    "memory_dir": "state/memory",
 }
 
 

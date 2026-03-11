@@ -24,6 +24,7 @@ from .events import (
     TranscriptFinal,
     TranscriptPartial,
 )
+from .memory import MemoryStore
 from .tools import ToolDefinition
 
 
@@ -50,6 +51,19 @@ class RealtimeVoiceAgent:
         self._stop_event = threading.Event()
         self._connection_closed_event = threading.Event()
         self._response_text_parts: dict[str, list[str]] = {}
+        memory_enabled = bool(getattr(settings, "memory_enabled", False))
+        self._memory_store = (
+            MemoryStore.from_path(str(getattr(settings, "memory_dir", "")))
+            if memory_enabled
+            else None
+        )
+        if self._memory_store is not None:
+            self._memory_store.ensure_initialized()
+
+    def _memory_index_context(self) -> str:
+        if self._memory_store is None:
+            return ""
+        return self._memory_store.read_memory_index()
 
     def _session_instructions(self) -> str:
         return build_runtime_instructions(
@@ -61,6 +75,7 @@ class RealtimeVoiceAgent:
                 region=self._settings.location_region,
                 country_code=self._settings.location_country_code,
             ),
+            memory_index_context=self._memory_index_context(),
         )
 
     def _response_instructions(self) -> str:
@@ -73,6 +88,7 @@ class RealtimeVoiceAgent:
                 region=self._settings.location_region,
                 country_code=self._settings.location_country_code,
             ),
+            memory_index_context=self._memory_index_context(),
             latest_turn_only=True,
         )
 

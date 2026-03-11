@@ -57,6 +57,7 @@ def build_runtime_instructions(
     *,
     latest_turn_only: bool = False,
     location_context: str | None = None,
+    memory_index_context: str | None = None,
     now: datetime | None = None,
 ) -> str:
     current_time = (now or datetime.now().astimezone()).replace(microsecond=0)
@@ -75,6 +76,8 @@ def build_runtime_instructions(
     if location_context and location_context.strip():
         instruction_parts.append(location_context.strip())
     instruction_parts.append(LATEST_INFO_POLICY)
+    if memory_index_context and memory_index_context.strip():
+        instruction_parts.append(memory_index_context.strip())
     if latest_turn_only:
         instruction_parts.append(LATEST_TURN_POLICY)
     return "\n\n".join(part for part in instruction_parts if part).strip()
@@ -205,6 +208,8 @@ class Settings:
     realtime_connect_retries: int
     realtime_retry_backoff_seconds: float
     realtime_retry_backoff_max_seconds: float
+    memory_enabled: bool
+    memory_dir: str
 
     @classmethod
     def load(cls) -> "Settings":
@@ -317,6 +322,8 @@ class Settings:
             realtime_connect_retries=_get_int(advanced, "realtime_connect_retries", 2),
             realtime_retry_backoff_seconds=_get_float(advanced, "realtime_retry_backoff_seconds", 0.75),
             realtime_retry_backoff_max_seconds=_get_float(advanced, "realtime_retry_backoff_max_seconds", 3.0),
+            memory_enabled=_get_bool(advanced, "memory_enabled", False),
+            memory_dir=str(_resolve_path(_get_str(advanced, "memory_dir", "state/memory"))),
         )
 
     @property
