@@ -90,7 +90,7 @@ def build_location_prompt_context(
     if not city or not region or not country_code:
         return ""
     return (
-        f"Default local context for the assistant and current user: {city}, {region}, {country_code}. "
+        f"Your location is {city}, {region}, {country_code}. "
         "Use this as the default location for local questions such as weather, nearby places, traffic, commute, and other ambiguous location-dependent requests. "
         "If the user explicitly names a different place, use the user-provided location instead."
     )
