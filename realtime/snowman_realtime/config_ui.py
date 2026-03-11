@@ -109,14 +109,25 @@ HTML_PAGE = """<!doctype html>
       flex: 1 1 520px;
     }
     .pill {
-      padding: 10px 12px;
-      font-size: 0.9rem;
-      border: 3px solid var(--line);
-      background: var(--panel);
-      box-shadow: 3px 3px 0 rgba(22, 48, 76, 0.18);
+      padding: 8px 12px;
+      font-size: 0.84rem;
+      border: 2px solid rgba(22, 48, 76, 0.42);
+      background: rgba(255, 255, 255, 0.68);
+      color: var(--muted);
+      box-shadow: none;
+      border-radius: 0;
+      text-transform: uppercase;
     }
-    .pill.good { background: var(--good-soft); color: var(--good); }
-    .pill.warn { background: var(--warn-soft); color: var(--warn); }
+    .pill.good {
+      background: #d7efe4;
+      color: var(--good);
+      border-color: rgba(53, 107, 87, 0.55);
+    }
+    .pill.warn {
+      background: #ffe1cf;
+      color: var(--warn);
+      border-color: rgba(138, 71, 47, 0.55);
+    }
     .actions {
       display: flex;
       flex-wrap: wrap;
