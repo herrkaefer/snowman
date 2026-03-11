@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 APP_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 PYTHON_BIN="${APP_DIR}/venv/bin/python3"
 MAIN_MODULE="snowman_realtime"
-PATTERN="${APP_DIR}/venv/bin/python3 -u -m ${MAIN_MODULE}"
+PATTERN="^${PYTHON_BIN} -u -m ${MAIN_MODULE}\$"
 
 existing_pids="$(pgrep -f "${PATTERN}" || true)"
 if [[ -n "${existing_pids}" ]]; then

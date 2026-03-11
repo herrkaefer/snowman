@@ -525,6 +525,15 @@ HTML_PAGE = """<!doctype html>
       return payload;
     }
 
+    function renderApplyingStatus() {
+      renderStatus({
+        setup_state: "applying",
+        service_state: "restarting",
+        missing_required_fields: [],
+        last_apply_message: "Applying configuration and restarting realtime service...",
+      });
+    }
+
     async function refresh() {
       const [config, status] = await Promise.all([
         readJson("/api/config"),
@@ -562,6 +571,9 @@ HTML_PAGE = """<!doctype html>
         return;
       }
       try {
+        $("validate").disabled = true;
+        $("apply").disabled = true;
+        renderApplyingStatus();
         setMessage("Applying configuration and restarting realtime service...");
         const result = await readJson("/api/config/apply", {
           method: "POST",
@@ -572,6 +584,14 @@ HTML_PAGE = """<!doctype html>
         setMessage(result.message, "good");
       } catch (error) {
         setMessage(error.message, "warn");
+        try {
+          const status = await readJson("/api/status");
+          renderStatus(status);
+        } catch (_ignored) {
+        }
+      } finally {
+        $("validate").disabled = false;
+        $("apply").disabled = false;
       }
     }
 
