@@ -32,6 +32,7 @@ import pvporcupine
 from pvrecorder import PvRecorder
 from tavily import TavilyClient
 from cobra_vad import CobraVAD
+from version import VERSION as PIPELINE_VERSION
 
 # Import prompts from the prompts module (absolute import)
 from prompts import SYSTEM_PROMPT, CHAT_PROMPTS
@@ -1445,6 +1446,7 @@ def main():
     global DEBUG_AUDIO
     DEBUG_AUDIO = args.debug
 
+    print(f"Snowman Pipeline v{PIPELINE_VERSION}")
     assistant = SimpleLocalAssistant(
         debug=args.debug
     )
