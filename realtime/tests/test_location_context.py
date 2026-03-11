@@ -104,6 +104,10 @@ class LocationContextTests(unittest.TestCase):
             "Your current default location, and the user's default location unless they specify otherwise, is W Belmont Ave, Chicago, IL, US.",
             prompt,
         )
+        self.assertIn(
+            "For nearby, closest, near me, around here, or local business searches, include this street-level location in any web_search query you generate instead of relying on city alone.",
+            prompt,
+        )
 
     def test_web_search_uses_configured_location(self) -> None:
         settings = SimpleNamespace(

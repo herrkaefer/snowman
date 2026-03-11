@@ -91,10 +91,15 @@ def build_location_prompt_context(
     parts = [part.strip() for part in (street, city, region, country_code) if part and part.strip()]
     if not parts:
         return ""
-    return (
+    prompt = (
         f"Your current default location, and the user's default location unless they specify otherwise, is {', '.join(parts)}. "
         "If the user explicitly gives a different location, use the user-provided location instead."
     )
+    if street and street.strip():
+        prompt += (
+            " For nearby, closest, near me, around here, or local business searches, include this street-level location in any web_search query you generate instead of relying on city alone."
+        )
+    return prompt
 
 
 def build_web_search_user_location(
