@@ -4,7 +4,7 @@ OpenAI Realtime API based voice assistant for Raspberry Pi.
 
 ## Goals
 
-- Keep the custom pipeline app untouched in `../custom_pipeline/`
+- Keep the custom pipeline app untouched in `../pipeline/`
 - Run on Raspberry Pi as a thin audio client
 - Use local Porcupine wake word detection
 - Stream audio directly to OpenAI Realtime over WebSocket
@@ -41,7 +41,9 @@ Preferred one-command deploy on Raspberry Pi:
 ./realtime/scripts/deploy.sh --host <pi_hostname/ip> --user <username> [--port 22]
 ```
 
-This script handles both first install and later redeploys. It syncs the app to `/home/<user>/voice-assistant-realtime/realtime`, refreshes the virtualenv, installs the parameterized systemd units, migrates any legacy secrets file into `data/secrets.json`, enables `snowman-realtime.service` and `snowman-realtime-healthcheck.timer`, and restarts the main service.
+This script handles both first install and later redeploys. It syncs the app to `/home/<user>/voice-assistant-realtime/realtime`, refreshes the virtualenv, installs the parameterized systemd units, migrates legacy realtime `.env` values into `data/config.json` and `data/secrets.json`, enables `snowman-realtime.service` and `snowman-realtime-healthcheck.timer`, and restarts the main service.
+
+For first install and web-based configuration on Raspberry Pi, see the root [`README.md`](../README.md).
 
 Directory layout:
 
@@ -49,6 +51,8 @@ Directory layout:
 - `scripts/` stores deploy, runtime, and probe scripts
 - `systemd/` stores deployable unit and timer files
 - `tests/` stores local test utilities and unit tests
+
+For local development:
 
 1. Create and activate a virtual environment:
 
@@ -101,9 +105,9 @@ For routine use on Raspberry Pi, prefer the systemd service instead of manual `n
 To bypass the wake word and repeatedly trigger turns automatically for debugging, set these keys in the Advanced tab JSON:
 
 ```bash
-AUTO_TRIGGER_ENABLED=true
-AUTO_TRIGGER_INTERVAL_SECONDS=0.0
-AUTO_TRIGGER_MAX_SESSIONS=0
+auto_trigger_enabled=true
+auto_trigger_interval_seconds=0.0
+auto_trigger_max_sessions=0
 ```
 
 With that mode enabled, the app enters each turn directly and records the next utterance without waiting for `Snowman`.
@@ -111,15 +115,15 @@ With that mode enabled, the app enters each turn directly and records the next u
 To make that mode fully automated for connection testing, also enable synthetic utterances in the Advanced tab:
 
 ```bash
-AUTO_TRIGGER_USE_SYNTHETIC_AUDIO=true
-AUTO_TRIGGER_SYNTHETIC_AUDIO_MS=2500
+auto_trigger_use_synthetic_audio=true
+auto_trigger_synthetic_audio_ms=2500
 ```
 
 ## Current Behavior
 
-- The app runs in short multi-turn session-window mode by default.
+- The app runs in multi-turn conversation mode by default.
 - The current interaction model is half-duplex: the assistant listens for one turn, replies, then waits for the next turn.
-- In session-window mode, one wake word opens one Realtime session and keeps it alive across short follow-up turns.
+- One wake word opens one Realtime session and keeps it alive across short follow-up turns.
 - The microphone is still locally gated per turn; it does not stay continuously open during reply playback.
 - Reply playback is not treated as interruptible; the next turn begins after the current reply finishes.
 - Each Realtime session and each response now receive dynamic prompt context with the current local date/time on the Raspberry Pi.
@@ -128,18 +132,18 @@ AUTO_TRIGGER_SYNTHETIC_AUDIO_MS=2500
 - Ordinary date/time questions can usually be answered directly from the injected current timestamp; `local_time` remains available as a fallback for precise current-time checks in longer sessions.
 - When location is configured, the same city/region/country/timezone is also passed to `web_search` as approximate user location.
 
-Common multi-turn settings:
+Common multi-turn settings in Advanced JSON:
 
-- `SESSION_FOLLOWUP_TIMEOUT=6.0` controls how long follow-up turns wait for speech
-- `SESSION_MAX_TURNS=0` means unlimited turns until timeout or end phrase
-- `POST_REPLY_CUE_PATH=audio/ready_cue.wav` replays the ready cue after each completed reply by default
+- `session_followup_timeout: 6.0` controls how long follow-up turns wait for speech
+- `session_max_turns: 0` means unlimited turns until timeout or end phrase
+- `post_reply_cue_path: "audio/ready_cue.wav"` replays the ready cue after each completed reply by default
 
-Optional fixed location settings:
+Optional fixed location settings in Basic:
 
-- `LOCATION_CITY=Chicago`
-- `LOCATION_REGION=IL`
-- `LOCATION_COUNTRY_CODE=US`
-- `LOCATION_TIMEZONE=America/Chicago`
+- `location_city: "Chicago"`
+- `location_region: "IL"`
+- `location_country_code: "US"`
+- `location_timezone: "America/Chicago"`
 
 ## Probe Realtime Connectivity
 
@@ -180,34 +184,12 @@ python scripts/probe_realtime_connect.py --attempts 20 --with-audio --audio-ms 2
 - The default prompt lives in `snowman_realtime/config.py`, and the UI writes any override into `data/config.json`.
 - The default mode uses manual turn submission to Realtime instead of continuous server VAD.
 - The product interaction model is currently half-duplex rather than true barge-in during reply playback.
-- Model reply playback is software-attenuated with `OUTPUT_GAIN` to reduce speaker feedback on Raspberry Pi.
-- Optional local input cleanup can be enabled with `INPUT_NS_ENABLED` and `INPUT_AGC_ENABLED`.
+- Model reply playback is software-attenuated with `output_gain` to reduce speaker feedback on Raspberry Pi.
+- Optional local input cleanup can be enabled with `input_ns_enabled` and `input_agc_enabled`.
 - The current `NS/AGC` path is lightweight local preprocessing designed to be safe on Raspberry Pi and easy to disable if it hurts recognition.
 - Direct Realtime tools currently include `web_search` for current information and `local_time` for exact current local time.
-- `web_search` uses `WEB_SEARCH_MODEL`, which now defaults to `gpt-5.2`.
-- Realtime connection/setup now uses configurable timeouts and exponential retry backoff, with three total attempts by default.
-
-## Current Hardware Config
-
-Current Raspberry Pi setup being tested:
-
-- Pi: `Raspberry Pi 5 Model B Rev 1.1`
-- Mic / speaker HAT: `Google voiceHAT SoundCard HiFi`
-- ALSA capture card: `snd_rpi_googlevoicehat_soundcar`
-- Input device index: `12`
-- Playback device: `plughw:2,0`
-- Wake word model: `Snowman_en_raspberry-pi_v4_0_0.ppn`
-- Wake word sensitivity: `0.75`
-- Voice: `shimmer`
-- Session window: `enabled`
-- Local input cleanup: `INPUT_NS_ENABLED=true`, `INPUT_AGC_ENABLED=true`
-- Current reply output gain: `0.13`
-
-Current known limitation on this hardware:
-
-- True wake-word interrupt during reply playback is not currently a supported interaction mode on this `voiceHAT` setup.
-- Lowering `OUTPUT_GAIN` reduces playback leakage into the microphone, but has not produced a reliable interrupt path.
-- For now, the intended user experience should be treated as half-duplex turn-taking rather than barge-in.
+- `web_search` uses `web_search_model`, which now defaults to `gpt-5.2`.
+- Realtime connection/setup uses configurable timeouts and retry backoff.
 
 ## Service
 
@@ -216,10 +198,7 @@ The Raspberry Pi deployment now uses:
 - `snowman-realtime.service`
 - `snowman-realtime-healthcheck.service`
 - `snowman-realtime-healthcheck.timer`
-- `snowman-realtime-window-start.service`
-- `snowman-realtime-window-start.timer`
-- `snowman-realtime-window-stop.service`
-- `snowman-realtime-window-stop.timer`
+- `snowman-config-ui.service`
 
 The main service uses `scripts/start_realtime.sh`, so every restart also cleans up any older leftover instance before starting a new one.
 
@@ -277,10 +256,11 @@ sudo systemctl status snowman-realtime-window-stop.timer --no-pager
 Use these commands on Raspberry Pi:
 
 ```bash
-sudo systemctl start snowman-realtime
-sudo systemctl stop snowman-realtime
-sudo systemctl restart snowman-realtime
-sudo systemctl status snowman-realtime --no-pager
+sudo systemctl start snowman-realtime.service
+sudo systemctl stop snowman-realtime.service
+sudo systemctl restart snowman-realtime.service
+sudo systemctl status snowman-realtime.service --no-pager
+sudo systemctl status snowman-config-ui.service --no-pager
 tail -f ~/voice-assistant-realtime/realtime/realtime.log
 ```
 

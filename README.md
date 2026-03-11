@@ -92,3 +92,40 @@ flowchart LR
 ```
 
 It is designed to run on the Raspberry Pi hardware that is already connected and reachable over SSH.
+
+### First Install and Configuration On Pi
+
+On a fresh Raspberry Pi, run:
+
+```bash
+curl -O https://raw.githubusercontent.com/herrkaefer/snowman/main/install-snowman.sh
+bash install-snowman.sh --target realtime
+```
+
+The installer will:
+
+- install system dependencies
+- clone the repo to `~/voice-assistant-realtime`
+- install the realtime services
+- start the config UI on port `3010`
+
+### Access the Config UI
+
+The config UI runs as the always-on `snowman-config-ui.service`, so you can reopen it later any time to change settings.
+
+<div align="center">
+  <img src="./assets/screenshot-config.png" height="500" alt="Snowman Config UI">
+</div>
+
+Open it from another device on the same network:
+
+- `http://<pi-ip>:3010`
+- or, if local hostname resolution works on your network, `http://raspberrypi.local:3010`
+
+To find the current Pi IP, run:
+
+```bash
+hostname -I
+```
+
+Then fill in the required fields and click `Save And Restart`.
