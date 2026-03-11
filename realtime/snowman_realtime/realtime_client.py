@@ -53,6 +53,7 @@ class RealtimeVoiceAgent:
 
     def _session_instructions(self) -> str:
         return build_runtime_instructions(
+            self._settings.agent_name,
             self._settings.system_prompt,
             location_context=build_location_prompt_context(
                 city=self._settings.location_city,
@@ -63,6 +64,7 @@ class RealtimeVoiceAgent:
 
     def _response_instructions(self) -> str:
         return build_runtime_instructions(
+            self._settings.agent_name,
             self._settings.system_prompt,
             location_context=build_location_prompt_context(
                 city=self._settings.location_city,

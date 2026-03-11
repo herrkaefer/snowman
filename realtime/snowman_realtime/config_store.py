@@ -13,14 +13,40 @@ CONFIG_FILENAME = "config.json"
 SECRETS_FILENAME = "secrets.json"
 SUPPORTED_PROVIDER = "openai"
 LEGACY_BASIC_ENV_TO_CONFIG_KEY = {
+    "OPENAI_REALTIME_MODEL": "openai_realtime_model",
     "OPENAI_VOICE": "openai_voice",
     "SYSTEM_PROMPT": "system_prompt",
+    "WAKE_WORD_SENSITIVITY": "wake_word_sensitivity",
+    "OUTPUT_GAIN": "output_gain",
+    "CUE_OUTPUT_GAIN": "cue_output_gain",
     "CUSTOM_WAKE_KEYWORD_PATH": "custom_wake_keyword_path",
     "LOCATION_CITY": "location_city",
     "LOCATION_REGION": "location_region",
     "LOCATION_COUNTRY_CODE": "location_country_code",
     "LOCATION_TIMEZONE": "location_timezone",
 }
+
+PROVIDER_OPTIONS = (SUPPORTED_PROVIDER,)
+
+OPENAI_REALTIME_MODEL_OPTIONS = (
+    "gpt-realtime",
+    "gpt-realtime-mini",
+)
+
+OPENAI_VOICE_OPTIONS = (
+    "alloy",
+    "ash",
+    "ballad",
+    "coral",
+    "echo",
+    "fable",
+    "marin",
+    "nova",
+    "onyx",
+    "sage",
+    "shimmer",
+    "verse",
+)
 LEGACY_SECRET_ENV_TO_CONFIG_KEY = {
     "OPENAI_API_KEY": "openai_api_key",
     "PORCUPINE_ACCESS_KEY": "porcupine_access_key",
@@ -29,18 +55,17 @@ LEGACY_SECRET_ENV_TO_CONFIG_KEY = {
 
 REQUIRED_FIELD_ERRORS = {
     "provider": "AI provider is required.",
-    "openai_api_key": "OpenAI API key is required.",
+    "openai_api_key": "API key is required.",
     "porcupine_access_key": "Porcupine access key is required.",
+    "openai_realtime_model": "Realtime model is required.",
     "openai_voice": "Voice is required.",
     "system_prompt": "Prompt is required.",
 }
 
 DEFAULT_ADVANCED_CONFIG: dict[str, object] = {
     "openai_realtime_url": "wss://api.openai.com/v1/realtime",
-    "openai_realtime_model": "gpt-realtime",
     "input_transcription_model": "gpt-4o-mini-transcribe",
     "openai_beta_header": "realtime=v1",
-    "wake_word_sensitivity": 0.5,
     "audio_device_index": -1,
     "input_frame_length": 512,
     "input_sample_rate": 16000,
@@ -61,8 +86,6 @@ DEFAULT_ADVANCED_CONFIG: dict[str, object] = {
     "web_search_wait_cue_gain": 0.20,
     "web_search_model": "gpt-5.2",
     "playback_device": "auto",
-    "output_gain": 0.5,
-    "cue_output_gain": 0.22,
     "input_ns_enabled": False,
     "input_agc_enabled": False,
     "input_ns_noise_floor_margin": 1.8,
@@ -143,9 +166,14 @@ def load_config_file(path: Path) -> dict[str, object]:
 
 def default_config_values(*, default_system_prompt: str) -> dict[str, object]:
     return {
+        "agent_name": "Snowman",
         "provider": SUPPORTED_PROVIDER,
+        "openai_realtime_model": OPENAI_REALTIME_MODEL_OPTIONS[0],
         "openai_voice": "alloy",
         "system_prompt": default_system_prompt,
+        "wake_word_sensitivity": 0.5,
+        "output_gain": 0.5,
+        "cue_output_gain": 0.22,
         "custom_wake_keyword_path": "",
         "location_city": "",
         "location_region": "",
@@ -161,9 +189,14 @@ def default_config_values(*, default_system_prompt: str) -> dict[str, object]:
 def default_public_config(*, default_system_prompt: str) -> dict[str, object]:
     defaults = default_config_values(default_system_prompt=default_system_prompt)
     return {
+        "agent_name": defaults["agent_name"],
         "provider": defaults["provider"],
+        "openai_realtime_model": defaults["openai_realtime_model"],
         "openai_voice": defaults["openai_voice"],
         "system_prompt": defaults["system_prompt"],
+        "wake_word_sensitivity": defaults["wake_word_sensitivity"],
+        "output_gain": defaults["output_gain"],
+        "cue_output_gain": defaults["cue_output_gain"],
         "custom_wake_keyword_path": defaults["custom_wake_keyword_path"],
         "location_city": defaults["location_city"],
         "location_region": defaults["location_region"],
@@ -174,7 +207,6 @@ def default_public_config(*, default_system_prompt: str) -> dict[str, object]:
 
 
 def load_config_values(*, default_system_prompt: str) -> dict[str, object]:
-    defaults = default_config_values(default_system_prompt=default_system_prompt)
     paths = resolve_config_paths()
     config_payload = load_config_file(paths.config_path)
     secret_payload = load_secrets_file(paths.secrets_path)
@@ -195,15 +227,37 @@ def materialize_config_values(
     advanced_payload = config_payload.get("advanced", {})
     if not isinstance(advanced_payload, dict):
         advanced_payload = {}
+    wake_word_sensitivity = config_payload.get(
+        "wake_word_sensitivity",
+        advanced_payload.get("wake_word_sensitivity", defaults["wake_word_sensitivity"]),
+    )
+    output_gain = config_payload.get(
+        "output_gain",
+        advanced_payload.get("output_gain", defaults["output_gain"]),
+    )
+    cue_output_gain = config_payload.get(
+        "cue_output_gain",
+        advanced_payload.get("cue_output_gain", defaults["cue_output_gain"]),
+    )
     advanced = dict(DEFAULT_ADVANCED_CONFIG)
     for key, value in advanced_payload.items():
         if key in DEFAULT_ADVANCED_CONFIG:
             advanced[key] = value
 
     return {
+        "agent_name": str(config_payload.get("agent_name", defaults["agent_name"])).strip(),
         "provider": str(config_payload.get("provider", defaults["provider"])).strip(),
+        "openai_realtime_model": str(
+            config_payload.get(
+                "openai_realtime_model",
+                advanced_payload.get("openai_realtime_model", defaults["openai_realtime_model"]),
+            )
+        ).strip(),
         "openai_voice": str(config_payload.get("openai_voice", defaults["openai_voice"])).strip(),
         "system_prompt": str(config_payload.get("system_prompt", defaults["system_prompt"])).strip(),
+        "wake_word_sensitivity": _coerce_config_value(wake_word_sensitivity, defaults["wake_word_sensitivity"]),
+        "output_gain": _coerce_config_value(output_gain, defaults["output_gain"]),
+        "cue_output_gain": _coerce_config_value(cue_output_gain, defaults["cue_output_gain"]),
         "custom_wake_keyword_path": str(
             config_payload.get("custom_wake_keyword_path", defaults["custom_wake_keyword_path"])
         ).strip(),
@@ -256,10 +310,44 @@ def validate_config_values(payload: dict[str, object]) -> list[str]:
     elif provider != SUPPORTED_PROVIDER:
         errors.append(f"Unsupported provider: {provider}. Only openai is currently available.")
 
-    for key in ("openai_api_key", "porcupine_access_key", "openai_voice", "system_prompt"):
+    for key in ("openai_api_key", "porcupine_access_key", "openai_realtime_model", "openai_voice", "system_prompt"):
         value = payload.get(key, "")
         if not isinstance(value, str) or not value.strip():
             errors.append(REQUIRED_FIELD_ERRORS[key])
+
+    agent_name = str(payload.get("agent_name", "")).strip()
+    if not agent_name:
+        errors.append("Voice assistant name is required.")
+
+    model = str(payload.get("openai_realtime_model", "")).strip()
+    if model and model not in OPENAI_REALTIME_MODEL_OPTIONS:
+        errors.append(
+            "Realtime model must be one of: "
+            + ", ".join(OPENAI_REALTIME_MODEL_OPTIONS)
+            + "."
+        )
+
+    voice = str(payload.get("openai_voice", "")).strip()
+    if voice and voice not in OPENAI_VOICE_OPTIONS:
+        errors.append(
+            "Voice must be one of: "
+            + ", ".join(OPENAI_VOICE_OPTIONS)
+            + "."
+        )
+
+    try:
+        wake_word_sensitivity = float(payload.get("wake_word_sensitivity", 0.5))
+    except (TypeError, ValueError):
+        errors.append("Wake word sensitivity must be a number between 0.0 and 1.0.")
+    else:
+        if not 0.0 <= wake_word_sensitivity <= 1.0:
+            errors.append("Wake word sensitivity must be between 0.0 and 1.0.")
+
+    for gain_key, label in (("output_gain", "Output gain"), ("cue_output_gain", "Cue gain")):
+        try:
+            float(payload.get(gain_key, 0.0))
+        except (TypeError, ValueError):
+            errors.append(f"{label} must be a number.")
 
     if not isinstance(payload.get("advanced", {}), dict):
         errors.append("Advanced config must be an object.")
@@ -272,10 +360,12 @@ def missing_required_fields(payload: dict[str, object]) -> list[str]:
     if not provider or provider != SUPPORTED_PROVIDER:
         missing.append("provider")
 
-    for key in ("openai_api_key", "porcupine_access_key", "openai_voice", "system_prompt"):
+    for key in ("openai_api_key", "porcupine_access_key", "openai_realtime_model", "openai_voice", "system_prompt"):
         value = payload.get(key, "")
         if not isinstance(value, str) or not value.strip():
             missing.append(key)
+    if not str(payload.get("agent_name", "")).strip():
+        missing.append("agent_name")
     return missing
 
 
@@ -284,9 +374,14 @@ def config_values_for_api(payload: dict[str, object]) -> dict[str, object]:
     openai_api_key = str(payload["openai_api_key"]).strip()
     porcupine_access_key = str(payload["porcupine_access_key"]).strip()
     return {
+        "agent_name": payload["agent_name"],
         "provider": payload["provider"],
+        "openai_realtime_model": payload["openai_realtime_model"],
         "openai_voice": payload["openai_voice"],
-        "system_prompt": payload["system_prompt"],
+        "system_prompt": _editable_system_prompt(str(payload["system_prompt"])),
+        "wake_word_sensitivity": payload["wake_word_sensitivity"],
+        "output_gain": payload["output_gain"],
+        "cue_output_gain": payload["cue_output_gain"],
         "custom_wake_keyword_path": payload["custom_wake_keyword_path"],
         "location_city": payload["location_city"],
         "location_region": payload["location_region"],
@@ -300,6 +395,9 @@ def config_values_for_api(payload: dict[str, object]) -> dict[str, object]:
         "porcupine_access_key_configured": bool(porcupine_access_key),
         "openai_api_key_masked": _mask_secret(openai_api_key),
         "porcupine_access_key_masked": _mask_secret(porcupine_access_key),
+        "provider_options": list(PROVIDER_OPTIONS),
+        "openai_realtime_model_options": list(OPENAI_REALTIME_MODEL_OPTIONS),
+        "openai_voice_options": list(OPENAI_VOICE_OPTIONS),
         "advanced": advanced if isinstance(advanced, dict) else dict(DEFAULT_ADVANCED_CONFIG),
     }
 
@@ -307,9 +405,14 @@ def config_values_for_api(payload: dict[str, object]) -> dict[str, object]:
 def write_config_files(paths: ConfigPaths, payload: dict[str, object]) -> None:
     paths.data_dir.mkdir(parents=True, exist_ok=True)
     config_payload = {
+        "agent_name": str(payload.get("agent_name", "Snowman")).strip() or "Snowman",
         "provider": str(payload["provider"]).strip().lower(),
+        "openai_realtime_model": str(payload["openai_realtime_model"]).strip(),
         "openai_voice": str(payload["openai_voice"]).strip(),
-        "system_prompt": str(payload["system_prompt"]).strip(),
+        "system_prompt": _editable_system_prompt(str(payload["system_prompt"])),
+        "wake_word_sensitivity": float(payload.get("wake_word_sensitivity", 0.5)),
+        "output_gain": float(payload.get("output_gain", 0.5)),
+        "cue_output_gain": float(payload.get("cue_output_gain", 0.22)),
         "custom_wake_keyword_path": str(payload.get("custom_wake_keyword_path", "")).strip(),
         "location_city": str(payload.get("location_city", "")).strip(),
         "location_region": str(payload.get("location_region", "")).strip(),
@@ -361,7 +464,10 @@ def config_updates_from_legacy_env(env_values: dict[str, str]) -> dict[str, obje
     for env_key, config_key in LEGACY_BASIC_ENV_TO_CONFIG_KEY.items():
         value = env_values.get(env_key, "").strip()
         if value:
-            updates[config_key] = value
+            if config_key in {"wake_word_sensitivity", "output_gain", "cue_output_gain"}:
+                updates[config_key] = float(value)
+            else:
+                updates[config_key] = value
 
     advanced: dict[str, object] = {}
     for config_key, default_value in DEFAULT_ADVANCED_CONFIG.items():
@@ -408,3 +514,27 @@ def _coerce_legacy_value(raw_value: str, default_value: object) -> object:
     if isinstance(default_value, float):
         return float(raw_value)
     return raw_value
+
+
+def _coerce_config_value(value: object, default_value: object) -> object:
+    if value is None:
+        return default_value
+    if isinstance(default_value, bool):
+        if isinstance(value, bool):
+            return value
+        return str(value).strip().lower() in {"1", "true", "yes", "on"}
+    if isinstance(default_value, int):
+        return int(value)
+    if isinstance(default_value, float):
+        return float(value)
+    return value
+
+
+def _editable_system_prompt(system_prompt: str) -> str:
+    prompt = system_prompt.strip()
+    if not prompt.startswith("Your name is "):
+        return prompt
+    sentence_end = prompt.find(".")
+    if sentence_end != -1:
+        return prompt[sentence_end + 1 :].strip()
+    return prompt

@@ -16,7 +16,7 @@ DEFAULT_FAILURE_CUE_PATH = AUDIO_DIR / "wake_chime.wav"
 DEFAULT_SESSION_END_CUE_PATH = AUDIO_DIR / "end_cue.wav"
 DEFAULT_WEB_SEARCH_WAIT_CUE_PATH = AUDIO_DIR / "soft_piano_loop.wav"
 DEFAULT_SYSTEM_PROMPT = (
-    "Your name is Snowman. You are a concise bilingual voice assistant running on a Raspberry Pi at the user's home. "
+    "You are a concise bilingual voice assistant running on a Raspberry Pi at the user's home. "
     "Voice style: friendly, clear, cheerful, warm, and supportive. "
     "Speak naturally with clear articulation, a steady conversational flow, and brief purposeful pauses after important points. "
     "You cannot see the user's surroundings, objects, screen, posture, or camera feed. "
@@ -53,6 +53,7 @@ class ConfigError(RuntimeError):
 
 
 def build_runtime_instructions(
+    agent_name: str,
     system_prompt: str,
     *,
     latest_turn_only: bool = False,
@@ -71,7 +72,7 @@ def build_runtime_instructions(
         "Use local_time only if you need to re-check the exact current local time because the conversation has been open for a while or the user explicitly wants the precise current time."
     )
 
-    instruction_parts = [system_prompt.strip(), current_time_context]
+    instruction_parts = [_build_agent_identity_prompt(agent_name), _strip_legacy_name_line(system_prompt), current_time_context]
     if location_context and location_context.strip():
         instruction_parts.append(location_context.strip())
     instruction_parts.append(LATEST_INFO_POLICY)
@@ -89,7 +90,7 @@ def build_location_prompt_context(
     if not city or not region or not country_code:
         return ""
     return (
-        f"Default local context for Snowman and the current user: {city}, {region}, {country_code}. "
+        f"Default local context for the assistant and current user: {city}, {region}, {country_code}. "
         "Use this as the default location for local questions such as weather, nearby places, traffic, commute, and other ambiguous location-dependent requests. "
         "If the user explicitly names a different place, use the user-provided location instead."
     )
@@ -118,6 +119,7 @@ def build_web_search_user_location(
 
 @dataclass(frozen=True)
 class Settings:
+    agent_name: str
     provider: str
     openai_api_key: str
     openai_realtime_url: str
@@ -212,10 +214,11 @@ class Settings:
             raise ConfigError("PORCUPINE_ACCESS_KEY is required in config.json and secrets.json")
 
         return cls(
+            agent_name=str(config_values["agent_name"]).strip() or "Snowman",
             provider=provider,
             openai_api_key=openai_api_key,
             openai_realtime_url=_get_str(advanced, "openai_realtime_url", "wss://api.openai.com/v1/realtime"),
-            openai_realtime_model=_get_str(advanced, "openai_realtime_model", "gpt-realtime"),
+            openai_realtime_model=str(config_values["openai_realtime_model"]).strip(),
             openai_voice=str(config_values["openai_voice"]).strip(),
             input_transcription_model=_get_str(advanced, "input_transcription_model", "gpt-4o-mini-transcribe"),
             openai_beta_header=_get_str(advanced, "openai_beta_header", "realtime=v1"),
@@ -226,7 +229,7 @@ class Settings:
                     or str(DEFAULT_WAKE_WORD_PATH)
                 )
             ),
-            wake_word_sensitivity=_get_float(advanced, "wake_word_sensitivity", 0.5),
+            wake_word_sensitivity=float(config_values["wake_word_sensitivity"]),
             audio_device_index=_get_int(advanced, "audio_device_index", -1),
             input_frame_length=_get_int(advanced, "input_frame_length", 512),
             input_sample_rate=_get_int(advanced, "input_sample_rate", 16000),
@@ -265,8 +268,8 @@ class Settings:
             web_search_wait_cue_gain=_get_float(advanced, "web_search_wait_cue_gain", 0.20),
             web_search_model=_get_str(advanced, "web_search_model", "gpt-5.2"),
             playback_device=_get_str(advanced, "playback_device", "auto"),
-            output_gain=_get_float(advanced, "output_gain", 0.5),
-            cue_output_gain=_get_float(advanced, "cue_output_gain", 0.22),
+            output_gain=float(config_values["output_gain"]),
+            cue_output_gain=float(config_values["cue_output_gain"]),
             input_ns_enabled=_get_bool(advanced, "input_ns_enabled", False),
             input_agc_enabled=_get_bool(advanced, "input_agc_enabled", False),
             input_ns_noise_floor_margin=_get_float(advanced, "input_ns_noise_floor_margin", 1.8),
@@ -339,6 +342,21 @@ def configure_logging(level_name: str) -> None:
         level=getattr(logging, level_name, logging.INFO),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+
+
+def _build_agent_identity_prompt(agent_name: str) -> str:
+    name = agent_name.strip() or "Snowman"
+    return f"Your name is {name}."
+
+
+def _strip_legacy_name_line(system_prompt: str) -> str:
+    prompt = system_prompt.strip()
+    if not prompt.startswith("Your name is "):
+        return prompt
+    sentence_end = prompt.find(".")
+    if sentence_end != -1:
+        return prompt[sentence_end + 1 :].strip()
+    return prompt
 
 
 def _get_str(values: dict[str, object], name: str, default: str) -> str:

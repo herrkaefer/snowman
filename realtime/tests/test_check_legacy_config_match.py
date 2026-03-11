@@ -10,16 +10,18 @@ class CheckLegacyConfigMatchTests(unittest.TestCase):
         results = compare_store_to_legacy_env(
             config_payload={
                 "provider": "openai",
+                "openai_realtime_model": "gpt-realtime",
                 "openai_voice": "marin",
                 "system_prompt": "Prompt",
+                "wake_word_sensitivity": 0.6,
+                "output_gain": 0.35,
+                "cue_output_gain": 0.78,
                 "custom_wake_keyword_path": "/home/snowman/data/wake_words/Snowman_en_raspberry-pi_v4_0_0.ppn",
                 "location_city": "Chicago",
                 "location_region": "IL",
                 "location_country_code": "US",
                 "location_timezone": "America/Chicago",
                 "advanced": {
-                    "openai_realtime_model": "gpt-realtime",
-                    "wake_word_sensitivity": 0.6,
                     "input_ns_enabled": True,
                 },
             },
@@ -39,6 +41,8 @@ class CheckLegacyConfigMatchTests(unittest.TestCase):
                 "LOCATION_TIMEZONE": "America/Chicago",
                 "OPENAI_REALTIME_MODEL": "gpt-realtime",
                 "WAKE_WORD_SENSITIVITY": "0.6",
+                "OUTPUT_GAIN": "0.35",
+                "CUE_OUTPUT_GAIN": "0.78",
                 "INPUT_NS_ENABLED": "true",
                 "SESSION_WINDOW_ENABLED": "true",
             },
@@ -55,9 +59,13 @@ class CheckLegacyConfigMatchTests(unittest.TestCase):
         results = compare_store_to_legacy_env(
             config_payload={
                 "provider": "openai",
+                "openai_realtime_model": "gpt-realtime",
                 "openai_voice": "alloy",
                 "system_prompt": "Prompt",
-                "advanced": {"wake_word_sensitivity": 0.5},
+                "wake_word_sensitivity": 0.5,
+                "output_gain": 0.5,
+                "cue_output_gain": 0.22,
+                "advanced": {},
             },
             secrets_payload={},
             legacy_env={"WAKE_WORD_SENSITIVITY": "0.6"},
@@ -65,7 +73,7 @@ class CheckLegacyConfigMatchTests(unittest.TestCase):
 
         self.assertEqual(len(results), 1)
         self.assertFalse(results[0].matches)
-        self.assertEqual(results[0].current_key, "advanced.wake_word_sensitivity")
+        self.assertEqual(results[0].current_key, "wake_word_sensitivity")
 
 
 if __name__ == "__main__":

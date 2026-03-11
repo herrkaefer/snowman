@@ -83,12 +83,14 @@ http://<pi-ip>:3010
 5. Fill in the Basic tab:
 
 - OpenAI API key
+- realtime model
 - Porcupine access key
+- voice assistant name
 - voice
 - system prompt
-- optional wake-word and location settings
+- optional wake-word model, wake-word sensitivity, and location settings
 
-6. Use the Advanced tab if you need to tune models, audio devices, gains, timeouts, retries, or health checks.
+6. Use the Advanced tab if you need to tune audio devices, turn timing, retries, or health checks.
 
 All runtime settings now come from `data/config.json` and `data/secrets.json`. The old `.env` workflow is no longer used.
 
@@ -104,19 +106,23 @@ For routine use on Raspberry Pi, prefer the systemd service instead of manual `n
 
 To bypass the wake word and repeatedly trigger turns automatically for debugging, set these keys in the Advanced tab JSON:
 
-```bash
-auto_trigger_enabled=true
-auto_trigger_interval_seconds=0.0
-auto_trigger_max_sessions=0
+```json
+{
+  "auto_trigger_enabled": true,
+  "auto_trigger_interval_seconds": 0.0,
+  "auto_trigger_max_sessions": 0
+}
 ```
 
 With that mode enabled, the app enters each turn directly and records the next utterance without waiting for `Snowman`.
 
 To make that mode fully automated for connection testing, also enable synthetic utterances in the Advanced tab:
 
-```bash
-auto_trigger_use_synthetic_audio=true
-auto_trigger_synthetic_audio_ms=2500
+```json
+{
+  "auto_trigger_use_synthetic_audio": true,
+  "auto_trigger_synthetic_audio_ms": 2500
+}
 ```
 
 ## Current Behavior
@@ -175,13 +181,14 @@ python scripts/probe_realtime_connect.py --attempts 20 --with-audio --audio-ms 2
 
 - The default playback path uses `aplay` with raw PCM.
 - Wake word detection still uses a local `.ppn` file.
-- Wake word sensitivity is controlled by the Advanced tab key `wake_word_sensitivity` in the range `0.0` to `1.0`; higher values reduce misses but increase false triggers.
+- Wake word sensitivity is controlled by the Basic tab field `wake_word_sensitivity` in the range `0.0` to `1.0`; higher values reduce misses but increase false triggers.
 - The default custom wake word path points to `Snowman_en_raspberry-pi_v4_0_0.ppn` in this directory.
 - The default ready cue uses `audio/ready_cue.wav`.
-- A post-reply cue can be configured with `POST_REPLY_CUE_PATH`; by default it reuses `audio/ready_cue.wav`.
-- A failure cue can be configured with `FAILURE_CUE_PATH`; by default it uses `audio/wake_chime.wav`.
+- A post-reply cue can be configured with the Advanced tab key `post_reply_cue_path`; by default it reuses `audio/ready_cue.wav`.
+- A failure cue can be configured with the Advanced tab key `failure_cue_path`; by default it uses `audio/wake_chime.wav`.
 - The default playback device is auto-detected and prefers `Google voiceHAT`.
-- The default prompt lives in `snowman_realtime/config.py`, and the UI writes any override into `data/config.json`.
+- The default prompt lives in `snowman_realtime/config.py`, and the UI writes prompt overrides into `data/config.json`.
+- The assistant name is configured separately with `agent_name`; runtime instructions prepend `Your name is {agent_name}.` automatically.
 - The default mode uses manual turn submission to Realtime instead of continuous server VAD.
 - The product interaction model is currently half-duplex rather than true barge-in during reply playback.
 - Model reply playback is software-attenuated with `output_gain` to reduce speaker feedback on Raspberry Pi.

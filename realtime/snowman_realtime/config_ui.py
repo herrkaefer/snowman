@@ -261,13 +261,22 @@ HTML_PAGE = """<!doctype html>
       min-height: 120px;
       resize: none;
     }
-    .secret-row {
+    .file-row {
       display: grid;
       grid-template-columns: 1fr auto;
       gap: 10px;
       align-items: start;
     }
-    .secret-row button {
+    .split-fields {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      align-items: start;
+    }
+    .split-fields > div {
+      min-width: 0;
+    }
+    .file-row button {
       margin-top: 0;
       min-width: 82px;
     }
@@ -325,7 +334,8 @@ HTML_PAGE = """<!doctype html>
       .wrap { padding: 22px 12px 38px; }
       .status-bar { flex-direction: column; }
       .actions { justify-content: flex-start; }
-      .secret-row { grid-template-columns: 1fr; }
+      .file-row { grid-template-columns: 1fr; }
+      .split-fields { grid-template-columns: 1fr; }
       #system_prompt { min-height: 480px; }
       #advanced_json { min-height: 120px; }
       .tabs { flex-wrap: wrap; }
@@ -357,53 +367,68 @@ HTML_PAGE = """<!doctype html>
     <div id="panel_basic" class="grid">
       <section class="card">
         <h2>AI Provider</h2>
-        <p>Provider, credentials, and voice settings for realtime replies.</p>
+        <p>Choose the AI provider and its current model, API key, and voice settings.</p>
         <label class="required" for="provider">Provider</label>
-        <select id="provider">
-          <option value="openai">OpenAI Realtime</option>
-        </select>
+        <select id="provider"></select>
 
         <div class="field-head">
-          <label class="required" for="openai_api_key">OpenAI API Key</label>
+          <label class="required" for="openai_api_key">API Key</label>
           <div id="openai_api_key_state" class="secret-state missing">Missing</div>
         </div>
-        <div class="secret-row">
-          <input id="openai_api_key" type="password" autocomplete="off" placeholder="Enter a new key or leave blank to keep the current one">
-          <button id="toggle_openai_api_key" class="secondary" type="button">Show</button>
-        </div>
+        <input id="openai_api_key" type="text" autocomplete="off" spellcheck="false" placeholder="Enter a new key or leave blank to keep the current one">
         <div id="openai_api_key_hint" class="hint"></div>
 
-        <label class="required" for="openai_voice">Voice</label>
-        <input id="openai_voice" type="text" placeholder="alloy">
+        <div class="split-fields">
+          <div>
+            <label class="required" for="openai_realtime_model">Realtime Model</label>
+            <select id="openai_realtime_model"></select>
+          </div>
+          <div>
+            <label class="required" for="openai_voice">Voice</label>
+            <select id="openai_voice"></select>
+          </div>
+        </div>
       </section>
 
       <section class="card">
         <h2>Assistant</h2>
         <p>Prompt and interaction defaults used by the realtime assistant.</p>
+        <label class="required" for="agent_name">Voice Assistant Name</label>
+        <input id="agent_name" type="text" placeholder="Snowman">
+
         <label class="required" for="system_prompt">System Prompt</label>
         <textarea id="system_prompt"></textarea>
       </section>
 
       <section class="card">
-        <h2>Device / Wake Word</h2>
-        <p>Local device credentials needed to detect the wake word on Raspberry Pi.</p>
+        <h2>Wake Word & Audio</h2>
+        <p>Set wake word detection and playback loudness for speech replies and short cue sounds.</p>
         <div class="field-head">
           <label class="required" for="porcupine_access_key">Porcupine Access Key</label>
           <div id="porcupine_access_key_state" class="secret-state missing">Missing</div>
         </div>
-        <div class="secret-row">
-          <input id="porcupine_access_key" type="password" autocomplete="off" placeholder="Enter a new key or leave blank to keep the current one">
-          <button id="toggle_porcupine_access_key" class="secondary" type="button">Show</button>
-        </div>
+        <input id="porcupine_access_key" type="text" autocomplete="off" spellcheck="false" placeholder="Enter a new key or leave blank to keep the current one">
         <div id="porcupine_access_key_hint" class="hint"></div>
 
         <label for="wake_word_model">Wake Word Model (.ppn)</label>
         <input id="custom_wake_keyword_path" type="hidden">
-        <div class="secret-row">
+        <div class="file-row">
           <input id="wake_word_model" type="file" accept=".ppn">
           <button id="upload_wake_word_model" class="secondary" type="button">Upload</button>
         </div>
         <div id="wake_word_model_hint" class="hint">Using the built-in default wake word model.</div>
+
+        <label for="wake_word_sensitivity">Wake Word Sensitivity</label>
+        <input id="wake_word_sensitivity" type="number" min="0" max="1" step="0.05" placeholder="0.5">
+        <div class="hint">Use a value from 0.0 to 1.0. Higher values reduce misses but increase false triggers.</div>
+
+        <label for="output_gain">Reply Volume (`output_gain`)</label>
+        <input id="output_gain" type="number" min="0" step="0.05" placeholder="0.5">
+        <div class="hint">Controls assistant speech playback loudness. `1.0` is original volume, `0.5` is half volume. Recommended: `0.2` to `1.0`.</div>
+
+        <label for="cue_output_gain">Cue Volume (`cue_output_gain`)</label>
+        <input id="cue_output_gain" type="number" min="0" step="0.05" placeholder="0.22">
+        <div class="hint">Controls short cue sounds such as ready and end chimes. `1.0` is original volume. Recommended: `0.2` to `1.2`.</div>
       </section>
 
       <section class="card">
@@ -457,10 +482,15 @@ HTML_PAGE = """<!doctype html>
         return null;
       }
       return {
+        agent_name: $("agent_name").value,
         provider: $("provider").value,
         openai_api_key: $("openai_api_key").value,
+        openai_realtime_model: $("openai_realtime_model").value,
         openai_voice: $("openai_voice").value,
         system_prompt: $("system_prompt").value,
+        wake_word_sensitivity: $("wake_word_sensitivity").value,
+        output_gain: $("output_gain").value,
+        cue_output_gain: $("cue_output_gain").value,
         porcupine_access_key: $("porcupine_access_key").value,
         custom_wake_keyword_path: $("custom_wake_keyword_path").value,
         location_city: $("location_city").value,
@@ -472,9 +502,16 @@ HTML_PAGE = """<!doctype html>
     }
 
     function populateForm(config) {
-      $("provider").value = config.provider || "openai";
-      $("openai_voice").value = config.openai_voice || "";
+      renderSelectOptions("provider", config.provider_options || [], config.provider || "openai", {
+        openai: "OpenAI"
+      });
+      renderSelectOptions("openai_realtime_model", config.openai_realtime_model_options || [], config.openai_realtime_model || "");
+      renderSelectOptions("openai_voice", config.openai_voice_options || [], config.openai_voice || "");
+      $("agent_name").value = config.agent_name || "Snowman";
       $("system_prompt").value = config.system_prompt || "";
+      $("wake_word_sensitivity").value = config.wake_word_sensitivity ?? 0.5;
+      $("output_gain").value = config.output_gain ?? 0.5;
+      $("cue_output_gain").value = config.cue_output_gain ?? 0.22;
       $("custom_wake_keyword_path").value = config.custom_wake_keyword_path || "";
       $("location_city").value = config.location_city || "";
       $("location_region").value = config.location_region || "";
@@ -499,6 +536,24 @@ HTML_PAGE = """<!doctype html>
         : "Using the built-in default wake word model.";
       autoGrowPrompt();
       autoGrowAdvanced();
+    }
+
+    function renderSelectOptions(id, values, selectedValue, labels = {}) {
+      const select = $(id);
+      const options = Array.isArray(values) ? values : [];
+      select.innerHTML = options
+        .map((value) => {
+          const selected = value === selectedValue ? " selected" : "";
+          const label = labels[value] || value;
+          return `<option value="${value}"${selected}>${label}</option>`;
+        })
+        .join("");
+      if (selectedValue && !options.includes(selectedValue)) {
+        select.innerHTML += `<option value="${selectedValue}" selected>${selectedValue}</option>`;
+      }
+      if (!select.value && selectedValue) {
+        select.value = selectedValue;
+      }
     }
 
     function setSecretState(id, configured, maskedValue) {
@@ -648,16 +703,6 @@ HTML_PAGE = """<!doctype html>
       textarea.style.height = `${textarea.scrollHeight}px`;
     }
 
-    function wireSecretToggle(id) {
-      const input = $(id);
-      const button = $("toggle_" + id);
-      button.addEventListener("click", () => {
-        const hidden = input.type === "password";
-        input.type = hidden ? "text" : "password";
-        button.textContent = hidden ? "Hide" : "Show";
-      });
-    }
-
     function showTab(name) {
       const basic = name === "basic";
       $("panel_basic").classList.toggle("hidden", !basic);
@@ -676,9 +721,6 @@ HTML_PAGE = """<!doctype html>
     $("advanced_json").addEventListener("input", autoGrowAdvanced);
     $("tab_basic").addEventListener("click", () => showTab("basic"));
     $("tab_advanced").addEventListener("click", () => showTab("advanced"));
-    wireSecretToggle("openai_api_key");
-    wireSecretToggle("porcupine_access_key");
-
     refresh().catch((error) => {
       setMessage(error.message, "warn");
     });

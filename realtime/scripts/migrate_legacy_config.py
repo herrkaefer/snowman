@@ -61,7 +61,8 @@ def merge_config(current: dict[str, object], updates: dict[str, object]) -> dict
             continue
 
         current_value = merged.get(key)
-        if current_value in {None, ""}:
+        default_value = defaults.get(key)
+        if current_value in {None, ""} or current_value == default_value:
             merged[key] = value
 
     return merged

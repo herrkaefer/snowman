@@ -31,6 +31,7 @@ class _DummyHTTPResponse:
 class LocationContextTests(unittest.TestCase):
     def test_runtime_instructions_include_location_context(self) -> None:
         instructions = build_runtime_instructions(
+            "Snowman",
             "Base prompt.",
             location_context=build_location_prompt_context(
                 city="Chicago",
@@ -41,18 +42,30 @@ class LocationContextTests(unittest.TestCase):
         )
 
         self.assertIn(
-            "Default local context for Snowman and the current user: Chicago, IL, US.",
+            "Default local context for the assistant and current user: Chicago, IL, US.",
             instructions,
         )
+        self.assertIn("Your name is Snowman.", instructions)
 
     def test_runtime_instructions_skip_empty_location_context(self) -> None:
         instructions = build_runtime_instructions(
+            "Snowman",
             "Base prompt.",
             location_context="",
             now=datetime(2026, 3, 8, 12, 0, tzinfo=timezone.utc),
         )
 
-        self.assertNotIn("Default local context for Snowman and the current user:", instructions)
+        self.assertNotIn("Default local context for the assistant and current user:", instructions)
+
+    def test_runtime_instructions_strip_legacy_name_line_from_system_prompt(self) -> None:
+        instructions = build_runtime_instructions(
+            "Juniper",
+            "Your name is Snowman. Base prompt.",
+            now=datetime(2026, 3, 8, 12, 0, tzinfo=timezone.utc),
+        )
+
+        self.assertIn("Your name is Juniper.", instructions)
+        self.assertEqual(instructions.count("Your name is "), 1)
 
     def test_build_web_search_user_location_returns_none_without_required_fields(self) -> None:
         self.assertIsNone(

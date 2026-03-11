@@ -28,9 +28,14 @@ class ConfigStoreTests(unittest.TestCase):
             data_dir.joinpath("config.json").write_text(
                 json.dumps(
                     {
+                        "agent_name": "Juniper",
                         "provider": "openai",
+                        "openai_realtime_model": "gpt-realtime-mini",
                         "openai_voice": "shimmer",
                         "system_prompt": "Saved prompt",
+                        "wake_word_sensitivity": 0.65,
+                        "output_gain": 0.4,
+                        "cue_output_gain": 0.7,
                         "custom_wake_keyword_path": "/tmp/custom.ppn",
                         "location_city": "Chicago",
                     }
@@ -52,8 +57,13 @@ class ConfigStoreTests(unittest.TestCase):
                     default_system_prompt=DEFAULT_SYSTEM_PROMPT,
                 )
 
+        self.assertEqual(config_values["agent_name"], "Juniper")
+        self.assertEqual(config_values["openai_realtime_model"], "gpt-realtime-mini")
         self.assertEqual(config_values["openai_voice"], "shimmer")
         self.assertEqual(config_values["system_prompt"], "Saved prompt")
+        self.assertEqual(config_values["wake_word_sensitivity"], 0.65)
+        self.assertEqual(config_values["output_gain"], 0.4)
+        self.assertEqual(config_values["cue_output_gain"], 0.7)
         self.assertEqual(config_values["custom_wake_keyword_path"], "/tmp/custom.ppn")
         self.assertEqual(config_values["openai_api_key"], "saved-openai")
         self.assertEqual(config_values["porcupine_access_key"], "saved-porcupine")
@@ -63,8 +73,13 @@ class ConfigStoreTests(unittest.TestCase):
         merged = merge_config_values(
             {
                 "provider": "openai",
+                "agent_name": "Snowman",
+                "openai_realtime_model": "gpt-realtime",
                 "openai_voice": "alloy",
                 "system_prompt": "Prompt",
+                "wake_word_sensitivity": 0.5,
+                "output_gain": 0.5,
+                "cue_output_gain": 0.22,
                 "custom_wake_keyword_path": "",
                 "location_city": "",
                 "location_region": "",
@@ -78,13 +93,23 @@ class ConfigStoreTests(unittest.TestCase):
             {
                 "openai_api_key": "   ",
                 "porcupine_access_key": "",
+                "agent_name": "Juniper",
+                "openai_realtime_model": "gpt-realtime-mini",
                 "system_prompt": "Updated prompt",
+                "wake_word_sensitivity": 0.7,
+                "output_gain": 0.45,
+                "cue_output_gain": 0.8,
             },
         )
 
+        self.assertEqual(merged["agent_name"], "Juniper")
+        self.assertEqual(merged["openai_realtime_model"], "gpt-realtime-mini")
         self.assertEqual(merged["openai_api_key"], "existing-openai")
         self.assertEqual(merged["porcupine_access_key"], "existing-porcupine")
         self.assertEqual(merged["system_prompt"], "Updated prompt")
+        self.assertEqual(merged["wake_word_sensitivity"], 0.7)
+        self.assertEqual(merged["output_gain"], 0.45)
+        self.assertEqual(merged["cue_output_gain"], 0.8)
 
     def test_load_config_values_uses_defaults_when_files_missing(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -95,22 +120,37 @@ class ConfigStoreTests(unittest.TestCase):
 
         self.assertEqual(config_values["openai_api_key"], "")
         self.assertEqual(config_values["porcupine_access_key"], "")
+        self.assertEqual(config_values["agent_name"], "Snowman")
+        self.assertEqual(config_values["openai_realtime_model"], "gpt-realtime")
         self.assertEqual(config_values["system_prompt"], DEFAULT_SYSTEM_PROMPT)
+        self.assertEqual(config_values["wake_word_sensitivity"], 0.5)
+        self.assertEqual(config_values["output_gain"], 0.5)
+        self.assertEqual(config_values["cue_output_gain"], 0.22)
         self.assertEqual(config_values["openai_voice"], "alloy")
 
     def test_validation_reports_missing_required_fields(self) -> None:
         errors = validate_config_values(
             {
                 "provider": "",
+                "agent_name": "",
+                "openai_realtime_model": "bad-model",
                 "openai_api_key": "",
                 "porcupine_access_key": "",
                 "openai_voice": "",
                 "system_prompt": "",
+                "wake_word_sensitivity": 2,
+                "output_gain": "bad",
+                "cue_output_gain": "bad",
                 "advanced": {},
             }
         )
 
         self.assertGreaterEqual(len(errors), 5)
+        self.assertIn("Voice assistant name is required.", errors)
+        self.assertIn("Realtime model must be one of: gpt-realtime, gpt-realtime-mini.", errors)
+        self.assertIn("Wake word sensitivity must be between 0.0 and 1.0.", errors)
+        self.assertIn("Output gain must be a number.", errors)
+        self.assertIn("Cue gain must be a number.", errors)
         self.assertIn("provider", missing_required_fields({"provider": "gemini"}))
 
     def test_write_config_files_persists_json_and_secrets(self) -> None:
@@ -123,9 +163,14 @@ class ConfigStoreTests(unittest.TestCase):
             write_config_files(
                 paths,
                 {
+                    "agent_name": "Juniper",
                     "provider": "openai",
+                    "openai_realtime_model": "gpt-realtime-mini",
                     "openai_voice": "shimmer",
                     "system_prompt": "Prompt",
+                    "wake_word_sensitivity": 0.6,
+                    "output_gain": 0.35,
+                    "cue_output_gain": 0.78,
                     "custom_wake_keyword_path": "/tmp/custom.ppn",
                     "location_city": "Chicago",
                     "location_region": "IL",
@@ -141,7 +186,12 @@ class ConfigStoreTests(unittest.TestCase):
             config_payload = json.loads(paths.config_path.read_text(encoding="utf-8"))
             secrets_payload = json.loads(paths.secrets_path.read_text(encoding="utf-8"))
 
+        self.assertEqual(config_payload["agent_name"], "Juniper")
+        self.assertEqual(config_payload["openai_realtime_model"], "gpt-realtime-mini")
         self.assertEqual(config_payload["openai_voice"], "shimmer")
+        self.assertEqual(config_payload["wake_word_sensitivity"], 0.6)
+        self.assertEqual(config_payload["output_gain"], 0.35)
+        self.assertEqual(config_payload["cue_output_gain"], 0.78)
         self.assertEqual(config_payload["custom_wake_keyword_path"], "/tmp/custom.ppn")
         self.assertEqual(secrets_payload["openai_api_key"], "test-openai")
         self.assertEqual(secrets_payload["admin_password"], "admin-pass")
@@ -152,35 +202,43 @@ class ConfigStoreTests(unittest.TestCase):
                 "OPENAI_VOICE": "nova",
                 "OPENAI_REALTIME_MODEL": "gpt-realtime",
                 "WAKE_WORD_SENSITIVITY": "0.75",
+                "OUTPUT_GAIN": "0.4",
+                "CUE_OUTPUT_GAIN": "0.9",
                 "INPUT_NS_ENABLED": "true",
                 "RESPONSE_MAX_OUTPUT_TOKENS": "1024",
             }
         )
 
+        self.assertEqual(updates["wake_word_sensitivity"], 0.75)
+        self.assertEqual(updates["output_gain"], 0.4)
+        self.assertEqual(updates["cue_output_gain"], 0.9)
+        self.assertEqual(updates["openai_realtime_model"], "gpt-realtime")
         self.assertEqual(updates["openai_voice"], "nova")
-        self.assertEqual(updates["advanced"]["openai_realtime_model"], "gpt-realtime")
-        self.assertEqual(updates["advanced"]["wake_word_sensitivity"], 0.75)
         self.assertTrue(updates["advanced"]["input_ns_enabled"])
         self.assertEqual(updates["advanced"]["response_max_output_tokens"], 1024)
 
     def test_default_public_config_uses_current_advanced_defaults(self) -> None:
         payload = default_public_config(default_system_prompt=DEFAULT_SYSTEM_PROMPT)
-        self.assertEqual(payload["advanced"]["openai_realtime_model"], "gpt-realtime")
+        self.assertEqual(payload["agent_name"], "Snowman")
+        self.assertEqual(payload["openai_realtime_model"], "gpt-realtime")
+        self.assertEqual(payload["wake_word_sensitivity"], 0.5)
+        self.assertEqual(payload["output_gain"], 0.5)
+        self.assertEqual(payload["cue_output_gain"], 0.22)
 
     def test_legacy_advanced_overrides_default_values_during_migration(self) -> None:
         defaults = default_public_config(default_system_prompt=DEFAULT_SYSTEM_PROMPT)
         merged = merge_config(
             defaults,
             {
-                "advanced": {
-                    "wake_word_sensitivity": 0.6,
-                    "output_gain": 0.35,
-                }
+                "wake_word_sensitivity": 0.6,
+                "output_gain": 0.35,
+                "cue_output_gain": 0.78,
             },
         )
 
-        self.assertEqual(merged["advanced"]["wake_word_sensitivity"], 0.6)
-        self.assertEqual(merged["advanced"]["output_gain"], 0.35)
+        self.assertEqual(merged["wake_word_sensitivity"], 0.6)
+        self.assertEqual(merged["output_gain"], 0.35)
+        self.assertEqual(merged["cue_output_gain"], 0.78)
 
 
 class SettingsConfigTests(unittest.TestCase):
@@ -192,9 +250,14 @@ class SettingsConfigTests(unittest.TestCase):
             data_dir.joinpath("config.json").write_text(
                 json.dumps(
                     {
+                        "agent_name": "Juniper",
                         "provider": "openai",
+                        "openai_realtime_model": "gpt-realtime-mini",
                         "openai_voice": "shimmer",
                         "system_prompt": "Saved prompt",
+                        "wake_word_sensitivity": 0.6,
+                        "output_gain": 0.35,
+                        "cue_output_gain": 0.78,
                         "custom_wake_keyword_path": str(custom_ppn_path),
                     }
                 ),
@@ -213,14 +276,18 @@ class SettingsConfigTests(unittest.TestCase):
             with patch.dict(os.environ, {"SNOWMAN_DATA_DIR": temp_dir}, clear=False):
                 settings = Settings.load()
 
+        self.assertEqual(settings.agent_name, "Juniper")
         self.assertEqual(settings.provider, "openai")
+        self.assertEqual(settings.openai_realtime_model, "gpt-realtime-mini")
         self.assertEqual(settings.openai_voice, "shimmer")
         self.assertEqual(settings.system_prompt, "Saved prompt")
         self.assertTrue(settings.session_window_enabled)
         self.assertEqual(settings.custom_wake_keyword_path, str(custom_ppn_path))
+        self.assertEqual(settings.wake_word_sensitivity, 0.6)
+        self.assertEqual(settings.output_gain, 0.35)
+        self.assertEqual(settings.cue_output_gain, 0.78)
         self.assertEqual(settings.openai_api_key, "saved-openai")
         self.assertEqual(settings.porcupine_access_key, "saved-porcupine")
-        self.assertEqual(settings.openai_realtime_model, "gpt-realtime")
 
 
 if __name__ == "__main__":
