@@ -1,0 +1,23 @@
+[Unit]
+Description=Snowman Config UI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__DEPLOY_USER__
+WorkingDirectory=__REALTIME_DIR__
+Environment=SNOWMAN_DATA_DIR=__DATA_DIR__
+Environment=SNOWMAN_REALTIME_SERVICE=snowman-realtime.service
+Environment=SNOWMAN_HEALTHCHECK_TIMER=snowman-realtime-healthcheck.timer
+Environment=SNOWMAN_CONFIG_UI_HOST=0.0.0.0
+Environment=SNOWMAN_CONFIG_UI_PORT=3010
+ExecStart=__REALTIME_DIR__/scripts/start_config_ui.sh
+Restart=always
+RestartSec=5
+KillMode=control-group
+StandardOutput=append:__REALTIME_DIR__/config-ui.log
+StandardError=append:__REALTIME_DIR__/config-ui.log
+
+[Install]
+WantedBy=multi-user.target

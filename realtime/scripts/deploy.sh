@@ -58,6 +58,7 @@ require_command ssh scp tar python3
 
 DEPLOY_HOME="/home/${PI_USER}"
 REALTIME_REMOTE_DIR="${DEPLOY_HOME}/voice-assistant-realtime/realtime"
+DATA_REMOTE_DIR="${DEPLOY_HOME}/voice-assistant-realtime/data"
 OBSOLETE_REMOTE_PATHS=(
   "${REALTIME_REMOTE_DIR}/ambient_soft_loop.wav"
   "${REALTIME_REMOTE_DIR}/end_cue.wav"
@@ -96,17 +97,21 @@ OBSOLETE_REMOTE_PATHS=(
 
 log "Deploying realtime to ${PI_USER}@${PI_HOST}:${REALTIME_REMOTE_DIR}"
 
-run_remote "mkdir -p $(quote_remote "${REALTIME_REMOTE_DIR}")"
+run_remote "mkdir -p $(quote_remote "${REALTIME_REMOTE_DIR}") $(quote_remote "${DATA_REMOTE_DIR}")"
 copy_dir_contents_to_remote "${REALTIME_DIR}" "${REALTIME_REMOTE_DIR}"
 copy_file_to_remote "${ENV_FILE}" "${REALTIME_REMOTE_DIR}/.env"
 run_remote "chmod 755 \
   $(quote_remote "${REALTIME_REMOTE_DIR}/scripts/start_realtime.sh") \
+  $(quote_remote "${REALTIME_REMOTE_DIR}/scripts/start_config_ui.sh") \
+  $(quote_remote "${REALTIME_REMOTE_DIR}/scripts/apply_managed_config.sh") \
   $(quote_remote "${REALTIME_REMOTE_DIR}/scripts/check_realtime_health.sh") \
   $(quote_remote "${REALTIME_REMOTE_DIR}/scripts/within_runtime_window.sh") \
   $(quote_remote "${REALTIME_REMOTE_DIR}/scripts/probe_realtime_connect.py")"
 install_rendered_template_to_remote "${REALTIME_DIR}/systemd/snowman-realtime.service.in" "0644" "/etc/systemd/system/snowman-realtime.service"
 install_rendered_template_to_remote "${REALTIME_DIR}/systemd/snowman-realtime-healthcheck.service.in" "0644" "/etc/systemd/system/snowman-realtime-healthcheck.service"
 install_file_to_remote "${REALTIME_DIR}/systemd/snowman-realtime-healthcheck.timer" "0644" "/etc/systemd/system/snowman-realtime-healthcheck.timer"
+install_rendered_template_to_remote "${REALTIME_DIR}/systemd/snowman-config-ui.service.in" "0644" "/etc/systemd/system/snowman-config-ui.service"
+install_rendered_template_to_remote "${REALTIME_DIR}/systemd/snowman-config-ui.sudoers.in" "0440" "/etc/sudoers.d/snowman-config-ui"
 
 cleanup_command="rm -f"
 for obsolete_path in "${OBSOLETE_REMOTE_PATHS[@]}"; do
@@ -123,6 +128,8 @@ run_remote "sudo systemctl daemon-reload"
 run_remote "sudo systemctl disable --now snowman-realtime-window-start.timer snowman-realtime-window-stop.timer >/dev/null 2>&1 || true"
 run_remote "sudo systemctl enable snowman-realtime.service"
 run_remote "sudo systemctl enable snowman-realtime-healthcheck.timer"
+run_remote "sudo systemctl enable snowman-config-ui.service"
+run_remote "sudo systemctl restart snowman-config-ui.service"
 run_remote "sudo systemctl restart snowman-realtime.service"
 
 show_remote_status "snowman-realtime.service"

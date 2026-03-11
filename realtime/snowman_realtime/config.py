@@ -6,7 +6,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values
+
+from .managed_config import load_editable_config
 
 
 BASE_DIR = Path(__file__).resolve().parents[1]
@@ -113,15 +115,9 @@ def build_web_search_user_location(
     return location
 
 
-def _get_bool(name: str, default: bool) -> bool:
-    raw_value = os.getenv(name)
-    if raw_value is None:
-        return default
-    return raw_value.strip().lower() in {"1", "true", "yes", "on"}
-
-
 @dataclass(frozen=True)
 class Settings:
+    provider: str
     openai_api_key: str
     openai_realtime_url: str
     openai_realtime_model: str
@@ -196,143 +192,163 @@ class Settings:
 
     @classmethod
     def load(cls) -> "Settings":
-        load_dotenv(BASE_DIR / ".env")
+        env_values = _load_env_values()
+        editable_config = load_editable_config(
+            default_system_prompt=DEFAULT_SYSTEM_PROMPT,
+            env_values=env_values,
+        )
 
-        openai_api_key = os.getenv("OPENAI_API_KEY", "").strip()
+        provider = str(editable_config["provider"]).strip().lower()
+        if provider != "openai":
+            raise RuntimeError(f"Unsupported provider {provider!r}; only 'openai' is implemented")
+
+        openai_api_key = str(editable_config["openai_api_key"]).strip()
         if not openai_api_key:
-            raise RuntimeError("OPENAI_API_KEY is required in realtime/.env")
+            raise RuntimeError("OPENAI_API_KEY is required in managed config or realtime/.env")
 
-        porcupine_access_key = os.getenv("PORCUPINE_ACCESS_KEY", "").strip()
+        porcupine_access_key = str(editable_config["porcupine_access_key"]).strip()
         if not porcupine_access_key:
-            raise RuntimeError("PORCUPINE_ACCESS_KEY is required in realtime/.env")
+            raise RuntimeError("PORCUPINE_ACCESS_KEY is required in managed config or realtime/.env")
 
         return cls(
+            provider=provider,
             openai_api_key=openai_api_key,
-            openai_realtime_url=os.getenv(
+            openai_realtime_url=_get_str(
+                env_values,
                 "OPENAI_REALTIME_URL", "wss://api.openai.com/v1/realtime"
-            ).strip(),
-            openai_realtime_model=os.getenv("OPENAI_REALTIME_MODEL", "gpt-realtime-mini").strip(),
-            openai_voice=os.getenv("OPENAI_VOICE", "alloy").strip(),
-            input_transcription_model=os.getenv(
+            ),
+            openai_realtime_model=_get_str(
+                env_values, "OPENAI_REALTIME_MODEL", "gpt-realtime-mini"
+            ),
+            openai_voice=str(editable_config["openai_voice"]).strip(),
+            input_transcription_model=_get_str(
+                env_values,
                 "INPUT_TRANSCRIPTION_MODEL", "gpt-4o-mini-transcribe"
-            ).strip(),
-            openai_beta_header=os.getenv("OPENAI_BETA_HEADER", "realtime=v1").strip(),
+            ),
+            openai_beta_header=_get_str(env_values, "OPENAI_BETA_HEADER", "realtime=v1"),
             porcupine_access_key=porcupine_access_key,
             custom_wake_keyword_path=str(
                 _resolve_path(
-                    os.getenv("CUSTOM_WAKE_KEYWORD_PATH", str(DEFAULT_WAKE_WORD_PATH)).strip()
+                    _get_str(env_values, "CUSTOM_WAKE_KEYWORD_PATH", str(DEFAULT_WAKE_WORD_PATH))
                 )
             ),
-            wake_word_sensitivity=float(os.getenv("WAKE_WORD_SENSITIVITY", "0.5")),
-            audio_device_index=int(os.getenv("AUDIO_DEVICE_INDEX", "-1")),
-            input_frame_length=int(os.getenv("INPUT_FRAME_LENGTH", "512")),
-            input_sample_rate=int(os.getenv("INPUT_SAMPLE_RATE", "16000")),
-            realtime_sample_rate=int(os.getenv("REALTIME_SAMPLE_RATE", "24000")),
-            session_idle_timeout=float(os.getenv("SESSION_IDLE_TIMEOUT", "20")),
-            session_window_enabled=_get_bool("SESSION_WINDOW_ENABLED", False),
-            session_followup_timeout=float(os.getenv("SESSION_FOLLOWUP_TIMEOUT", "6.0")),
-            session_max_turns=int(os.getenv("SESSION_MAX_TURNS", "0")),
-            interruption_enabled=_get_bool("INTERRUPTION_ENABLED", True),
-            log_level=os.getenv("LOG_LEVEL", "INFO").strip().upper(),
-            system_prompt=os.getenv("SYSTEM_PROMPT", DEFAULT_SYSTEM_PROMPT).strip(),
-            location_city=os.getenv("LOCATION_CITY", "").strip(),
-            location_region=os.getenv("LOCATION_REGION", "").strip(),
-            location_country_code=os.getenv("LOCATION_COUNTRY_CODE", "").strip(),
+            wake_word_sensitivity=_get_float(env_values, "WAKE_WORD_SENSITIVITY", 0.5),
+            audio_device_index=_get_int(env_values, "AUDIO_DEVICE_INDEX", -1),
+            input_frame_length=_get_int(env_values, "INPUT_FRAME_LENGTH", 512),
+            input_sample_rate=_get_int(env_values, "INPUT_SAMPLE_RATE", 16000),
+            realtime_sample_rate=_get_int(env_values, "REALTIME_SAMPLE_RATE", 24000),
+            session_idle_timeout=_get_float(env_values, "SESSION_IDLE_TIMEOUT", 20.0),
+            session_window_enabled=bool(editable_config["session_window_enabled"]),
+            session_followup_timeout=_get_float(env_values, "SESSION_FOLLOWUP_TIMEOUT", 6.0),
+            session_max_turns=_get_int(env_values, "SESSION_MAX_TURNS", 0),
+            interruption_enabled=_get_bool(env_values, "INTERRUPTION_ENABLED", True),
+            log_level=_get_str(env_values, "LOG_LEVEL", "INFO").upper(),
+            system_prompt=str(editable_config["system_prompt"]).strip(),
+            location_city=str(editable_config["location_city"]).strip(),
+            location_region=str(editable_config["location_region"]).strip(),
+            location_country_code=str(editable_config["location_country_code"]).strip(),
             location_timezone=(
-                os.getenv("LOCATION_TIMEZONE", "").strip()
-                or os.getenv("TZ", "").strip()
+                str(editable_config["location_timezone"]).strip()
+                or _get_str(env_values, "TZ", "")
             ),
             ready_cue_path=str(
                 _resolve_path(
-                    os.getenv("READY_CUE_PATH", str(DEFAULT_READY_CUE_PATH)).strip()
+                    _get_str(env_values, "READY_CUE_PATH", str(DEFAULT_READY_CUE_PATH))
                 )
             ),
             post_reply_cue_path=_resolve_optional_path(
-                os.getenv("POST_REPLY_CUE_PATH", str(DEFAULT_READY_CUE_PATH)).strip()
+                _get_str(env_values, "POST_REPLY_CUE_PATH", str(DEFAULT_READY_CUE_PATH))
             ),
-            post_reply_cue_delay_seconds=float(
-                os.getenv("POST_REPLY_CUE_DELAY_SECONDS", "0.15")
+            post_reply_cue_delay_seconds=_get_float(
+                env_values, "POST_REPLY_CUE_DELAY_SECONDS", 0.15
             ),
             failure_cue_path=_resolve_optional_path(
-                os.getenv("FAILURE_CUE_PATH", str(DEFAULT_FAILURE_CUE_PATH)).strip()
+                _get_str(env_values, "FAILURE_CUE_PATH", str(DEFAULT_FAILURE_CUE_PATH))
             ),
             session_end_cue_path=_resolve_optional_path(
-                os.getenv("SESSION_END_CUE_PATH", str(DEFAULT_SESSION_END_CUE_PATH)).strip()
+                _get_str(env_values, "SESSION_END_CUE_PATH", str(DEFAULT_SESSION_END_CUE_PATH))
             ),
-            web_search_wait_cue_enabled=_get_bool("WEB_SEARCH_WAIT_CUE_ENABLED", True),
+            web_search_wait_cue_enabled=_get_bool(
+                env_values, "WEB_SEARCH_WAIT_CUE_ENABLED", True
+            ),
             web_search_wait_cue_path=_resolve_optional_path(
-                os.getenv(
+                _get_str(
+                    env_values,
                     "WEB_SEARCH_WAIT_CUE_PATH",
                     str(DEFAULT_WEB_SEARCH_WAIT_CUE_PATH),
-                ).strip()
+                )
             ),
-            web_search_wait_cue_delay_seconds=float(
-                os.getenv("WEB_SEARCH_WAIT_CUE_DELAY_SECONDS", "0.5")
+            web_search_wait_cue_delay_seconds=_get_float(
+                env_values, "WEB_SEARCH_WAIT_CUE_DELAY_SECONDS", 0.5
             ),
-            web_search_wait_cue_gain=float(os.getenv("WEB_SEARCH_WAIT_CUE_GAIN", "0.20")),
-            web_search_model=os.getenv("WEB_SEARCH_MODEL", "gpt-5.2").strip(),
-            playback_device=os.getenv("PLAYBACK_DEVICE", "auto").strip(),
-            output_gain=float(os.getenv("OUTPUT_GAIN", "0.5")),
-            cue_output_gain=float(os.getenv("CUE_OUTPUT_GAIN", "0.22")),
-            input_ns_enabled=_get_bool("INPUT_NS_ENABLED", False),
-            input_agc_enabled=_get_bool("INPUT_AGC_ENABLED", False),
-            input_ns_noise_floor_margin=float(
-                os.getenv("INPUT_NS_NOISE_FLOOR_MARGIN", "1.8")
+            web_search_wait_cue_gain=_get_float(env_values, "WEB_SEARCH_WAIT_CUE_GAIN", 0.20),
+            web_search_model=_get_str(env_values, "WEB_SEARCH_MODEL", "gpt-5.2"),
+            playback_device=_get_str(env_values, "PLAYBACK_DEVICE", "auto"),
+            output_gain=_get_float(env_values, "OUTPUT_GAIN", 0.5),
+            cue_output_gain=_get_float(env_values, "CUE_OUTPUT_GAIN", 0.22),
+            input_ns_enabled=_get_bool(env_values, "INPUT_NS_ENABLED", False),
+            input_agc_enabled=_get_bool(env_values, "INPUT_AGC_ENABLED", False),
+            input_ns_noise_floor_margin=_get_float(
+                env_values, "INPUT_NS_NOISE_FLOOR_MARGIN", 1.8
             ),
-            input_ns_min_rms=int(os.getenv("INPUT_NS_MIN_RMS", "25")),
-            input_ns_attenuation=float(os.getenv("INPUT_NS_ATTENUATION", "0.35")),
-            input_agc_target_rms=int(os.getenv("INPUT_AGC_TARGET_RMS", "1100")),
-            input_agc_max_gain=float(os.getenv("INPUT_AGC_MAX_GAIN", "4.0")),
-            input_agc_attack=float(os.getenv("INPUT_AGC_ATTACK", "0.35")),
-            input_agc_release=float(os.getenv("INPUT_AGC_RELEASE", "0.08")),
-            turn_detection_type=os.getenv("TURN_DETECTION_TYPE", "none").strip(),
-            turn_detection_eagerness=os.getenv("TURN_DETECTION_EAGERNESS", "low").strip(),
-            turn_detection_create_response=_get_bool("TURN_DETECTION_CREATE_RESPONSE", True),
+            input_ns_min_rms=_get_int(env_values, "INPUT_NS_MIN_RMS", 25),
+            input_ns_attenuation=_get_float(env_values, "INPUT_NS_ATTENUATION", 0.35),
+            input_agc_target_rms=_get_int(env_values, "INPUT_AGC_TARGET_RMS", 1100),
+            input_agc_max_gain=_get_float(env_values, "INPUT_AGC_MAX_GAIN", 4.0),
+            input_agc_attack=_get_float(env_values, "INPUT_AGC_ATTACK", 0.35),
+            input_agc_release=_get_float(env_values, "INPUT_AGC_RELEASE", 0.08),
+            turn_detection_type=_get_str(env_values, "TURN_DETECTION_TYPE", "none"),
+            turn_detection_eagerness=_get_str(env_values, "TURN_DETECTION_EAGERNESS", "low"),
+            turn_detection_create_response=_get_bool(
+                env_values, "TURN_DETECTION_CREATE_RESPONSE", True
+            ),
             turn_detection_interrupt_response=_get_bool(
-                "TURN_DETECTION_INTERRUPT_RESPONSE", False
+                env_values, "TURN_DETECTION_INTERRUPT_RESPONSE", False
             ),
-            recording_start_timeout=float(os.getenv("RECORDING_START_TIMEOUT", "8.0")),
-            recording_max_duration=float(os.getenv("RECORDING_MAX_DURATION", "10.0")),
-            recording_silence_duration=float(os.getenv("RECORDING_SILENCE_DURATION", "1.2")),
-            recording_rms_threshold=int(os.getenv("RECORDING_RMS_THRESHOLD", "45")),
-            recording_preroll_frames=int(os.getenv("RECORDING_PREROLL_FRAMES", "12")),
-            auto_trigger_enabled=_get_bool("AUTO_TRIGGER_ENABLED", False),
-            auto_trigger_interval_seconds=float(
-                os.getenv("AUTO_TRIGGER_INTERVAL_SECONDS", "0.0")
+            recording_start_timeout=_get_float(env_values, "RECORDING_START_TIMEOUT", 8.0),
+            recording_max_duration=_get_float(env_values, "RECORDING_MAX_DURATION", 10.0),
+            recording_silence_duration=_get_float(
+                env_values, "RECORDING_SILENCE_DURATION", 1.2
             ),
-            auto_trigger_max_sessions=int(os.getenv("AUTO_TRIGGER_MAX_SESSIONS", "0")),
+            recording_rms_threshold=_get_int(env_values, "RECORDING_RMS_THRESHOLD", 45),
+            recording_preroll_frames=_get_int(env_values, "RECORDING_PREROLL_FRAMES", 12),
+            auto_trigger_enabled=_get_bool(env_values, "AUTO_TRIGGER_ENABLED", False),
+            auto_trigger_interval_seconds=_get_float(
+                env_values, "AUTO_TRIGGER_INTERVAL_SECONDS", 0.0
+            ),
+            auto_trigger_max_sessions=_get_int(env_values, "AUTO_TRIGGER_MAX_SESSIONS", 0),
             auto_trigger_use_synthetic_audio=_get_bool(
-                "AUTO_TRIGGER_USE_SYNTHETIC_AUDIO", False
+                env_values, "AUTO_TRIGGER_USE_SYNTHETIC_AUDIO", False
             ),
-            auto_trigger_synthetic_audio_ms=int(
-                os.getenv("AUTO_TRIGGER_SYNTHETIC_AUDIO_MS", "2500")
+            auto_trigger_synthetic_audio_ms=_get_int(
+                env_values, "AUTO_TRIGGER_SYNTHETIC_AUDIO_MS", 2500
             ),
-            auto_trigger_synthetic_frequency_hz=float(
-                os.getenv("AUTO_TRIGGER_SYNTHETIC_FREQUENCY_HZ", "220.0")
+            auto_trigger_synthetic_frequency_hz=_get_float(
+                env_values, "AUTO_TRIGGER_SYNTHETIC_FREQUENCY_HZ", 220.0
             ),
-            auto_trigger_synthetic_amplitude=int(
-                os.getenv("AUTO_TRIGGER_SYNTHETIC_AMPLITUDE", "700")
+            auto_trigger_synthetic_amplitude=_get_int(
+                env_values, "AUTO_TRIGGER_SYNTHETIC_AMPLITUDE", 700
             ),
-            response_max_output_tokens=int(os.getenv("RESPONSE_MAX_OUTPUT_TOKENS", "800")),
-            health_heartbeat_enabled=_get_bool("HEALTH_HEARTBEAT_ENABLED", True),
-            health_heartbeat_interval_seconds=float(
-                os.getenv("HEALTH_HEARTBEAT_INTERVAL_SECONDS", "60.0")
+            response_max_output_tokens=_get_int(env_values, "RESPONSE_MAX_OUTPUT_TOKENS", 800),
+            health_heartbeat_enabled=_get_bool(env_values, "HEALTH_HEARTBEAT_ENABLED", True),
+            health_heartbeat_interval_seconds=_get_float(
+                env_values, "HEALTH_HEARTBEAT_INTERVAL_SECONDS", 60.0
             ),
-            realtime_connect_timeout_seconds=float(
-                os.getenv("REALTIME_CONNECT_TIMEOUT_SECONDS", "20.0")
+            realtime_connect_timeout_seconds=_get_float(
+                env_values, "REALTIME_CONNECT_TIMEOUT_SECONDS", 20.0
             ),
-            realtime_session_created_timeout_seconds=float(
-                os.getenv("REALTIME_SESSION_CREATED_TIMEOUT_SECONDS", "3.0")
+            realtime_session_created_timeout_seconds=_get_float(
+                env_values, "REALTIME_SESSION_CREATED_TIMEOUT_SECONDS", 3.0
             ),
-            realtime_post_update_grace_seconds=float(
-                os.getenv("REALTIME_POST_UPDATE_GRACE_SECONDS", "1.0")
+            realtime_post_update_grace_seconds=_get_float(
+                env_values, "REALTIME_POST_UPDATE_GRACE_SECONDS", 1.0
             ),
-            realtime_connect_retries=int(os.getenv("REALTIME_CONNECT_RETRIES", "2")),
-            realtime_retry_backoff_seconds=float(
-                os.getenv("REALTIME_RETRY_BACKOFF_SECONDS", "0.75")
+            realtime_connect_retries=_get_int(env_values, "REALTIME_CONNECT_RETRIES", 2),
+            realtime_retry_backoff_seconds=_get_float(
+                env_values, "REALTIME_RETRY_BACKOFF_SECONDS", 0.75
             ),
-            realtime_retry_backoff_max_seconds=float(
-                os.getenv("REALTIME_RETRY_BACKOFF_MAX_SECONDS", "3.0")
+            realtime_retry_backoff_max_seconds=_get_float(
+                env_values, "REALTIME_RETRY_BACKOFF_MAX_SECONDS", 3.0
             ),
         )
 
@@ -372,3 +388,32 @@ def configure_logging(level_name: str) -> None:
         level=getattr(logging, level_name, logging.INFO),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+
+
+def _load_env_values() -> dict[str, str]:
+    values = {
+        key: value
+        for key, value in dotenv_values(BASE_DIR / ".env").items()
+        if key and value is not None
+    }
+    values.update(os.environ)
+    return values
+
+
+def _get_str(values: dict[str, str], name: str, default: str) -> str:
+    return values.get(name, default).strip()
+
+
+def _get_bool(values: dict[str, str], name: str, default: bool) -> bool:
+    raw_value = values.get(name)
+    if raw_value is None:
+        return default
+    return raw_value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _get_int(values: dict[str, str], name: str, default: int) -> int:
+    return int(_get_str(values, name, str(default)))
+
+
+def _get_float(values: dict[str, str], name: str, default: float) -> float:
+    return float(_get_str(values, name, str(default)))

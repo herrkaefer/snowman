@@ -8,7 +8,8 @@ Type=simple
 User=__DEPLOY_USER__
 Group=audio
 WorkingDirectory=__REALTIME_DIR__
-EnvironmentFile=__REALTIME_DIR__/.env
+Environment=SNOWMAN_DATA_DIR=__DATA_DIR__
+EnvironmentFile=-__REALTIME_DIR__/.env
 ExecStart=__REALTIME_DIR__/scripts/start_realtime.sh
 Restart=always
 RestartSec=5

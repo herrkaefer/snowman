@@ -1,0 +1,10 @@
+__DEPLOY_USER__ ALL=(root) NOPASSWD: /usr/bin/systemctl daemon-reload
+__DEPLOY_USER__ ALL=(root) NOPASSWD: /usr/bin/systemctl enable snowman-realtime.service
+__DEPLOY_USER__ ALL=(root) NOPASSWD: /usr/bin/systemctl restart snowman-realtime.service
+__DEPLOY_USER__ ALL=(root) NOPASSWD: /usr/bin/systemctl enable snowman-realtime-healthcheck.timer
+__DEPLOY_USER__ ALL=(root) NOPASSWD: /usr/bin/systemctl start snowman-realtime-healthcheck.timer
+__DEPLOY_USER__ ALL=(root) NOPASSWD: /bin/systemctl daemon-reload
+__DEPLOY_USER__ ALL=(root) NOPASSWD: /bin/systemctl enable snowman-realtime.service
+__DEPLOY_USER__ ALL=(root) NOPASSWD: /bin/systemctl restart snowman-realtime.service
+__DEPLOY_USER__ ALL=(root) NOPASSWD: /bin/systemctl enable snowman-realtime-healthcheck.timer
+__DEPLOY_USER__ ALL=(root) NOPASSWD: /bin/systemctl start snowman-realtime-healthcheck.timer

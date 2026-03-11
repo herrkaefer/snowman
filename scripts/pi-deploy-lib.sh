@@ -68,6 +68,7 @@ render_template_to_file() {
   sed \
     -e "s|__DEPLOY_USER__|${PI_USER}|g" \
     -e "s|__DEPLOY_HOME__|${DEPLOY_HOME}|g" \
+    -e "s|__DATA_DIR__|${DATA_REMOTE_DIR:-}|g" \
     -e "s|__PIPELINE_DIR__|${PIPELINE_REMOTE_DIR:-}|g" \
     -e "s|__REALTIME_DIR__|${REALTIME_REMOTE_DIR:-}|g" \
     "${template_file}" > "${output_file}"
