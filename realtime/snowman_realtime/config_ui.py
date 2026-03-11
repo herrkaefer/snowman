@@ -192,6 +192,16 @@ HTML_PAGE = """<!doctype html>
       text-transform: uppercase;
       letter-spacing: 0.04em;
     }
+    .section-title {
+      margin: 18px 0 8px;
+      font-size: 1rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      font-weight: 700;
+    }
+    .section-title:first-of-type {
+      margin-top: 0;
+    }
     .card p {
       margin: 0 0 18px;
       color: var(--muted);
@@ -276,6 +286,15 @@ HTML_PAGE = """<!doctype html>
     .split-fields > div {
       min-width: 0;
     }
+    .quad-fields {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      align-items: start;
+    }
+    .quad-fields > div {
+      min-width: 0;
+    }
     .file-row button {
       margin-top: 0;
       min-width: 82px;
@@ -336,9 +355,13 @@ HTML_PAGE = """<!doctype html>
       .actions { justify-content: flex-start; }
       .file-row { grid-template-columns: 1fr; }
       .split-fields { grid-template-columns: 1fr; }
+      .quad-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       #system_prompt { min-height: 480px; }
       #advanced_json { min-height: 120px; }
       .tabs { flex-wrap: wrap; }
+    }
+    @media (max-width: 520px) {
+      .quad-fields { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -391,12 +414,36 @@ HTML_PAGE = """<!doctype html>
       </section>
 
       <section class="card">
-        <h2>Assistant</h2>
-        <p>Prompt and interaction defaults used by the realtime assistant.</p>
-        <label class="required" for="agent_name">Voice Assistant Name</label>
+        <h2>Identity</h2>
+        <p>Set the assistant's name, default local context, and speaking instructions.</p>
+        <div class="section-title">Name</div>
         <input id="agent_name" type="text" placeholder="Snowman">
 
-        <label class="required" for="system_prompt">System Prompt</label>
+        <div class="section-title">Location</div>
+        <p>Optional default location for local questions. It is also passed into system instructions to help with local context.</p>
+        <label for="location_street">Street / Area</label>
+        <input id="location_street" type="text" placeholder="123 Main St or W Belmont Ave">
+
+        <div class="quad-fields">
+          <div>
+            <label for="location_city">City</label>
+            <input id="location_city" type="text" placeholder="Chicago">
+          </div>
+          <div>
+            <label for="location_region">Region / State</label>
+            <input id="location_region" type="text" placeholder="IL">
+          </div>
+          <div>
+            <label for="location_country_code">Country</label>
+            <input id="location_country_code" type="text" placeholder="US">
+          </div>
+          <div>
+            <label for="location_timezone">Time Zone</label>
+            <select id="location_timezone"></select>
+          </div>
+        </div>
+
+        <label class="required" for="system_prompt">Prompt</label>
         <textarea id="system_prompt"></textarea>
       </section>
 
@@ -429,22 +476,6 @@ HTML_PAGE = """<!doctype html>
         <label for="cue_output_gain">Cue Volume</label>
         <input id="cue_output_gain" type="number" min="0" step="0.05" placeholder="0.22">
         <div class="hint">Controls short cue sounds such as ready and end chimes. `1.0` is original volume. Recommended: `0.2` to `1.2`.</div>
-      </section>
-
-      <section class="card">
-        <h2>Location</h2>
-        <p>Optional defaults for location-aware answers. Multi-turn follow-up stays enabled by default.</p>
-        <label for="location_city">City</label>
-        <input id="location_city" type="text" placeholder="Chicago">
-
-        <label for="location_region">Region / State</label>
-        <input id="location_region" type="text" placeholder="IL">
-
-        <label for="location_country_code">Country Code</label>
-        <input id="location_country_code" type="text" placeholder="US">
-
-        <label for="location_timezone">Timezone</label>
-        <input id="location_timezone" type="text" placeholder="America/Chicago">
       </section>
     </div>
 
@@ -488,6 +519,7 @@ HTML_PAGE = """<!doctype html>
         openai_realtime_model: $("openai_realtime_model").value,
         openai_voice: $("openai_voice").value,
         system_prompt: $("system_prompt").value,
+        location_street: $("location_street").value,
         wake_word_sensitivity: $("wake_word_sensitivity").value,
         output_gain: $("output_gain").value,
         cue_output_gain: $("cue_output_gain").value,
@@ -509,6 +541,10 @@ HTML_PAGE = """<!doctype html>
       renderSelectOptions("openai_voice", config.openai_voice_options || [], config.openai_voice || "");
       $("agent_name").value = config.agent_name || "Snowman";
       $("system_prompt").value = config.system_prompt || "";
+      renderSelectOptions("location_timezone", config.timezone_options || [], config.location_timezone || "", {
+        "": "Use Raspberry Pi timezone"
+      });
+      $("location_street").value = config.location_street || "";
       $("wake_word_sensitivity").value = config.wake_word_sensitivity ?? 0.5;
       $("output_gain").value = config.output_gain ?? 0.5;
       $("cue_output_gain").value = config.cue_output_gain ?? 0.22;
@@ -516,7 +552,6 @@ HTML_PAGE = """<!doctype html>
       $("location_city").value = config.location_city || "";
       $("location_region").value = config.location_region || "";
       $("location_country_code").value = config.location_country_code || "";
-      $("location_timezone").value = config.location_timezone || "";
       $("advanced_json").value = JSON.stringify(config.advanced || {}, null, 2);
       $("openai_api_key").value = "";
       $("porcupine_access_key").value = "";

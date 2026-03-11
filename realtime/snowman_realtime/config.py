@@ -83,14 +83,16 @@ def build_runtime_instructions(
 
 def build_location_prompt_context(
     *,
+    street: str,
     city: str,
     region: str,
     country_code: str,
 ) -> str:
-    if not city or not region or not country_code:
+    parts = [part.strip() for part in (street, city, region, country_code) if part and part.strip()]
+    if not parts:
         return ""
     return (
-        f"Your location is {city}, {region}, {country_code}. "
+        f"Your location is {', '.join(parts)}. "
         "Use this as the default location for local questions such as weather, nearby places, traffic, commute, and other ambiguous location-dependent requests. "
         "If the user explicitly names a different place, use the user-provided location instead."
     )
@@ -103,15 +105,22 @@ def build_web_search_user_location(
     country_code: str,
     timezone: str,
 ) -> dict[str, str] | None:
-    if not city or not region or not country_code:
+    city = city.strip()
+    region = region.strip()
+    country_code = country_code.strip()
+    timezone = timezone.strip()
+    if not any((city, region, country_code, timezone)):
         return None
 
-    location = {
+    location: dict[str, str] = {
         "type": "approximate",
-        "city": city,
-        "region": region,
-        "country": country_code,
     }
+    if city:
+        location["city"] = city
+    if region:
+        location["region"] = region
+    if country_code:
+        location["country"] = country_code
     if timezone:
         location["timezone"] = timezone
     return location
@@ -141,6 +150,7 @@ class Settings:
     interruption_enabled: bool
     log_level: str
     system_prompt: str
+    location_street: str
     location_city: str
     location_region: str
     location_country_code: str
@@ -241,6 +251,7 @@ class Settings:
             interruption_enabled=_get_bool(advanced, "interruption_enabled", True),
             log_level=_get_str(advanced, "log_level", "INFO").upper(),
             system_prompt=str(config_values["system_prompt"]).strip(),
+            location_street=str(config_values["location_street"]).strip(),
             location_city=str(config_values["location_city"]).strip(),
             location_region=str(config_values["location_region"]).strip(),
             location_country_code=str(config_values["location_country_code"]).strip(),

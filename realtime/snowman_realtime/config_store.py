@@ -5,6 +5,7 @@ import os
 import shlex
 from dataclasses import dataclass
 from pathlib import Path
+from zoneinfo import available_timezones
 
 
 APP_DIR = Path(__file__).resolve().parents[1]
@@ -19,6 +20,7 @@ LEGACY_BASIC_ENV_TO_CONFIG_KEY = {
     "WAKE_WORD_SENSITIVITY": "wake_word_sensitivity",
     "OUTPUT_GAIN": "output_gain",
     "CUE_OUTPUT_GAIN": "cue_output_gain",
+    "LOCATION_STREET": "location_street",
     "CUSTOM_WAKE_KEYWORD_PATH": "custom_wake_keyword_path",
     "LOCATION_CITY": "location_city",
     "LOCATION_REGION": "location_region",
@@ -171,6 +173,7 @@ def default_config_values(*, default_system_prompt: str) -> dict[str, object]:
         "openai_realtime_model": OPENAI_REALTIME_MODEL_OPTIONS[0],
         "openai_voice": "alloy",
         "system_prompt": default_system_prompt,
+        "location_street": "",
         "wake_word_sensitivity": 0.5,
         "output_gain": 0.5,
         "cue_output_gain": 0.22,
@@ -194,6 +197,7 @@ def default_public_config(*, default_system_prompt: str) -> dict[str, object]:
         "openai_realtime_model": defaults["openai_realtime_model"],
         "openai_voice": defaults["openai_voice"],
         "system_prompt": defaults["system_prompt"],
+        "location_street": defaults["location_street"],
         "wake_word_sensitivity": defaults["wake_word_sensitivity"],
         "output_gain": defaults["output_gain"],
         "cue_output_gain": defaults["cue_output_gain"],
@@ -255,6 +259,7 @@ def materialize_config_values(
         ).strip(),
         "openai_voice": str(config_payload.get("openai_voice", defaults["openai_voice"])).strip(),
         "system_prompt": str(config_payload.get("system_prompt", defaults["system_prompt"])).strip(),
+        "location_street": str(config_payload.get("location_street", defaults["location_street"])).strip(),
         "wake_word_sensitivity": _coerce_config_value(wake_word_sensitivity, defaults["wake_word_sensitivity"]),
         "output_gain": _coerce_config_value(output_gain, defaults["output_gain"]),
         "cue_output_gain": _coerce_config_value(cue_output_gain, defaults["cue_output_gain"]),
@@ -379,6 +384,7 @@ def config_values_for_api(payload: dict[str, object]) -> dict[str, object]:
         "openai_realtime_model": payload["openai_realtime_model"],
         "openai_voice": payload["openai_voice"],
         "system_prompt": _editable_system_prompt(str(payload["system_prompt"])),
+        "location_street": payload["location_street"],
         "wake_word_sensitivity": payload["wake_word_sensitivity"],
         "output_gain": payload["output_gain"],
         "cue_output_gain": payload["cue_output_gain"],
@@ -398,6 +404,7 @@ def config_values_for_api(payload: dict[str, object]) -> dict[str, object]:
         "provider_options": list(PROVIDER_OPTIONS),
         "openai_realtime_model_options": list(OPENAI_REALTIME_MODEL_OPTIONS),
         "openai_voice_options": list(OPENAI_VOICE_OPTIONS),
+        "timezone_options": _timezone_options(),
         "advanced": advanced if isinstance(advanced, dict) else dict(DEFAULT_ADVANCED_CONFIG),
     }
 
@@ -410,6 +417,7 @@ def write_config_files(paths: ConfigPaths, payload: dict[str, object]) -> None:
         "openai_realtime_model": str(payload["openai_realtime_model"]).strip(),
         "openai_voice": str(payload["openai_voice"]).strip(),
         "system_prompt": _editable_system_prompt(str(payload["system_prompt"])),
+        "location_street": str(payload.get("location_street", "")).strip(),
         "wake_word_sensitivity": float(payload.get("wake_word_sensitivity", 0.5)),
         "output_gain": float(payload.get("output_gain", 0.5)),
         "cue_output_gain": float(payload.get("cue_output_gain", 0.22)),
@@ -538,3 +546,7 @@ def _editable_system_prompt(system_prompt: str) -> str:
     if sentence_end != -1:
         return prompt[sentence_end + 1 :].strip()
     return prompt
+
+
+def _timezone_options() -> list[str]:
+    return [""] + sorted(available_timezones())

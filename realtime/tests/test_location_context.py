@@ -34,6 +34,7 @@ class LocationContextTests(unittest.TestCase):
             "Snowman",
             "Base prompt.",
             location_context=build_location_prompt_context(
+                street="",
                 city="Chicago",
                 region="IL",
                 country_code="US",
@@ -42,7 +43,7 @@ class LocationContextTests(unittest.TestCase):
         )
 
         self.assertIn(
-            "Default local context for the assistant and current user: Chicago, IL, US.",
+            "Your location is Chicago, IL, US.",
             instructions,
         )
         self.assertIn("Your name is Snowman.", instructions)
@@ -71,11 +72,35 @@ class LocationContextTests(unittest.TestCase):
         self.assertIsNone(
             build_web_search_user_location(
                 city="",
-                region="IL",
-                country_code="US",
-                timezone="America/Chicago",
+                region="",
+                country_code="",
+                timezone="",
             )
         )
+
+    def test_build_web_search_user_location_accepts_partial_fields(self) -> None:
+        self.assertEqual(
+            build_web_search_user_location(
+                city="Chicago",
+                region="",
+                country_code="",
+                timezone="",
+            ),
+            {
+                "type": "approximate",
+                "city": "Chicago",
+            },
+        )
+
+    def test_build_location_prompt_context_includes_street_when_available(self) -> None:
+        prompt = build_location_prompt_context(
+            street="W Belmont Ave",
+            city="Chicago",
+            region="IL",
+            country_code="US",
+        )
+
+        self.assertIn("Your location is W Belmont Ave, Chicago, IL, US.", prompt)
 
     def test_web_search_uses_configured_location(self) -> None:
         settings = SimpleNamespace(

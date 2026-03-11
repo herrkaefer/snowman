@@ -56,6 +56,7 @@ class RealtimeVoiceAgent:
             self._settings.agent_name,
             self._settings.system_prompt,
             location_context=build_location_prompt_context(
+                street=self._settings.location_street,
                 city=self._settings.location_city,
                 region=self._settings.location_region,
                 country_code=self._settings.location_country_code,
@@ -67,6 +68,7 @@ class RealtimeVoiceAgent:
             self._settings.agent_name,
             self._settings.system_prompt,
             location_context=build_location_prompt_context(
+                street=self._settings.location_street,
                 city=self._settings.location_city,
                 region=self._settings.location_region,
                 country_code=self._settings.location_country_code,

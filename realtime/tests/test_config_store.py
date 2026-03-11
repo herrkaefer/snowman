@@ -33,6 +33,7 @@ class ConfigStoreTests(unittest.TestCase):
                         "openai_realtime_model": "gpt-realtime-mini",
                         "openai_voice": "shimmer",
                         "system_prompt": "Saved prompt",
+                        "location_street": "W Belmont Ave",
                         "wake_word_sensitivity": 0.65,
                         "output_gain": 0.4,
                         "cue_output_gain": 0.7,
@@ -61,6 +62,7 @@ class ConfigStoreTests(unittest.TestCase):
         self.assertEqual(config_values["openai_realtime_model"], "gpt-realtime-mini")
         self.assertEqual(config_values["openai_voice"], "shimmer")
         self.assertEqual(config_values["system_prompt"], "Saved prompt")
+        self.assertEqual(config_values["location_street"], "W Belmont Ave")
         self.assertEqual(config_values["wake_word_sensitivity"], 0.65)
         self.assertEqual(config_values["output_gain"], 0.4)
         self.assertEqual(config_values["cue_output_gain"], 0.7)
@@ -77,6 +79,7 @@ class ConfigStoreTests(unittest.TestCase):
                 "openai_realtime_model": "gpt-realtime",
                 "openai_voice": "alloy",
                 "system_prompt": "Prompt",
+                "location_street": "",
                 "wake_word_sensitivity": 0.5,
                 "output_gain": 0.5,
                 "cue_output_gain": 0.22,
@@ -96,6 +99,7 @@ class ConfigStoreTests(unittest.TestCase):
                 "agent_name": "Juniper",
                 "openai_realtime_model": "gpt-realtime-mini",
                 "system_prompt": "Updated prompt",
+                "location_street": "W Belmont Ave",
                 "wake_word_sensitivity": 0.7,
                 "output_gain": 0.45,
                 "cue_output_gain": 0.8,
@@ -107,6 +111,7 @@ class ConfigStoreTests(unittest.TestCase):
         self.assertEqual(merged["openai_api_key"], "existing-openai")
         self.assertEqual(merged["porcupine_access_key"], "existing-porcupine")
         self.assertEqual(merged["system_prompt"], "Updated prompt")
+        self.assertEqual(merged["location_street"], "W Belmont Ave")
         self.assertEqual(merged["wake_word_sensitivity"], 0.7)
         self.assertEqual(merged["output_gain"], 0.45)
         self.assertEqual(merged["cue_output_gain"], 0.8)
@@ -168,6 +173,7 @@ class ConfigStoreTests(unittest.TestCase):
                     "openai_realtime_model": "gpt-realtime-mini",
                     "openai_voice": "shimmer",
                     "system_prompt": "Prompt",
+                    "location_street": "W Belmont Ave",
                     "wake_word_sensitivity": 0.6,
                     "output_gain": 0.35,
                     "cue_output_gain": 0.78,
@@ -189,6 +195,7 @@ class ConfigStoreTests(unittest.TestCase):
         self.assertEqual(config_payload["agent_name"], "Juniper")
         self.assertEqual(config_payload["openai_realtime_model"], "gpt-realtime-mini")
         self.assertEqual(config_payload["openai_voice"], "shimmer")
+        self.assertEqual(config_payload["location_street"], "W Belmont Ave")
         self.assertEqual(config_payload["wake_word_sensitivity"], 0.6)
         self.assertEqual(config_payload["output_gain"], 0.35)
         self.assertEqual(config_payload["cue_output_gain"], 0.78)
@@ -255,6 +262,7 @@ class SettingsConfigTests(unittest.TestCase):
                         "openai_realtime_model": "gpt-realtime-mini",
                         "openai_voice": "shimmer",
                         "system_prompt": "Saved prompt",
+                        "location_street": "W Belmont Ave",
                         "wake_word_sensitivity": 0.6,
                         "output_gain": 0.35,
                         "cue_output_gain": 0.78,
@@ -281,6 +289,7 @@ class SettingsConfigTests(unittest.TestCase):
         self.assertEqual(settings.openai_realtime_model, "gpt-realtime-mini")
         self.assertEqual(settings.openai_voice, "shimmer")
         self.assertEqual(settings.system_prompt, "Saved prompt")
+        self.assertEqual(settings.location_street, "W Belmont Ave")
         self.assertTrue(settings.session_window_enabled)
         self.assertEqual(settings.custom_wake_keyword_path, str(custom_ppn_path))
         self.assertEqual(settings.wake_word_sensitivity, 0.6)
