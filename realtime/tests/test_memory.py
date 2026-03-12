@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from realtime.snowman_realtime.config import build_runtime_instructions, build_session_instructions
+from realtime.snowman_realtime.config import build_session_instructions
 from realtime.snowman_realtime.config_ui import (
     _memory_payload_for_api,
     _restore_profile_baseline,

@@ -41,39 +41,8 @@ LATEST_INFO_POLICY = (
     "This includes politics and officeholders, current leaders, recent events, news, weather, prices, exchange rates, laws, regulations, product availability, schedules, sports results, and anything phrased as current, latest, today, now, or recent. "
     "If web_search fails or is unavailable, briefly say that you cannot verify the latest information right now."
 )
-LATEST_TURN_POLICY = (
-    "Do not greet, welcome, or introduce yourself. "
-    "Answer the user's most recent utterance using relevant context already established in the current session. "
-    "Do not ignore useful session context just because the latest utterance is short or ambiguous. "
-    "Keep the reply concise and direct. "
-    "For questions about your location, home, address, or where the user is, use the configured session home location directly when relevant. "
-    "Do not say that you are only virtual, cloud-based, or that you have no physical location when a session home location is configured. "
-    "Do not claim to see the user's surroundings, environment, or anything visual."
-)
-
-
 class ConfigError(RuntimeError):
     """Raised when Snowman cannot start because required config is missing or invalid."""
-
-
-def build_runtime_instructions(
-    agent_name: str,
-    system_prompt: str,
-    *,
-    latest_turn_only: bool = False,
-    location_context: str | None = None,
-    memory_index_context: str | None = None,
-    now: datetime | None = None,
-) -> str:
-    if latest_turn_only:
-        return build_response_instructions()
-    return build_session_instructions(
-        agent_name,
-        system_prompt,
-        location_context=location_context,
-        memory_index_context=memory_index_context,
-        now=now,
-    )
 
 
 def build_session_instructions(
@@ -96,17 +65,13 @@ def build_session_instructions(
         "Use local_time only if you need to re-check the exact current local time because the conversation has been open for a while, or if the user explicitly asks for the exact current time right now."
     )
 
-    instruction_parts = [_build_agent_identity_prompt(agent_name), _strip_legacy_name_line(system_prompt), current_time_context]
+    instruction_parts = [_build_agent_identity_prompt(agent_name), system_prompt, current_time_context]
     if location_context and location_context.strip():
         instruction_parts.append(location_context.strip())
     instruction_parts.append(LATEST_INFO_POLICY)
     if memory_index_context and memory_index_context.strip():
         instruction_parts.append(memory_index_context.strip())
     return "\n\n".join(part for part in instruction_parts if part).strip()
-
-
-def build_response_instructions() -> str:
-    return LATEST_TURN_POLICY.strip()
 
 
 def build_location_prompt_context(
@@ -388,16 +353,6 @@ def configure_logging(level_name: str) -> None:
 def _build_agent_identity_prompt(agent_name: str) -> str:
     name = agent_name.strip() or "Snowman"
     return f"Your name is {name}."
-
-
-def _strip_legacy_name_line(system_prompt: str) -> str:
-    prompt = system_prompt.strip()
-    if not prompt.startswith("Your name is "):
-        return prompt
-    sentence_end = prompt.find(".")
-    if sentence_end != -1:
-        return prompt[sentence_end + 1 :].strip()
-    return prompt
 
 
 def _get_str(values: dict[str, object], name: str, default: str) -> str:

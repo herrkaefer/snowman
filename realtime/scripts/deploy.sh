@@ -87,6 +87,13 @@ OBSOLETE_REMOTE_PATHS=(
   "${REALTIME_REMOTE_DIR}/start_realtime.sh"
   "${REALTIME_REMOTE_DIR}/within_runtime_window.sh"
   "${REALTIME_REMOTE_DIR}/scripts/main.py"
+  "${REALTIME_REMOTE_DIR}/snowman_realtime/tools/__init__.py"
+  "${REALTIME_REMOTE_DIR}/snowman_realtime/tools/base.py"
+  "${REALTIME_REMOTE_DIR}/snowman_realtime/tools/local_time.py"
+  "${REALTIME_REMOTE_DIR}/snowman_realtime/tools/profile_memory_get.py"
+  "${REALTIME_REMOTE_DIR}/snowman_realtime/tools/profile_memory_update.py"
+  "${REALTIME_REMOTE_DIR}/snowman_realtime/tools/registry.py"
+  "${REALTIME_REMOTE_DIR}/snowman_realtime/tools/web_search.py"
 )
 
 log "Deploying realtime to ${PI_USER}@${PI_HOST}:${REALTIME_REMOTE_DIR}"

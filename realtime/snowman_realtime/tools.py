@@ -1,17 +1,14 @@
 from __future__ import annotations
 
+import importlib
 import json
-import logging
+import pkgutil
 from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Any
-from urllib import error, request
+from functools import lru_cache
+from typing import Any, Callable
 
-from .config import Settings, build_web_search_user_location
-from .memory import MemoryStore, MemoryValidationError, default_profile_markdown
-
-
-LOGGER = logging.getLogger(__name__)
+from . import tool_modules
+from .memory import MemoryStore
 
 
 @dataclass(frozen=True)
@@ -26,89 +23,73 @@ class ToolSessionState:
     profile_loaded: bool = False
 
 
+@dataclass(frozen=True)
+class ToolAvailability:
+    memory_enabled: bool = False
+
+
+@dataclass
+class ToolContext:
+    settings: Any
+    session_state: ToolSessionState
+    memory_store: Any | None = None
+
+
+def _always_enabled(_: ToolAvailability) -> bool:
+    return True
+
+
+@dataclass(frozen=True)
+class ToolSpec:
+    definition: ToolDefinition
+    execute: Callable[[ToolContext, dict[str, Any]], dict[str, Any]]
+    is_enabled: Callable[[ToolAvailability], bool] = _always_enabled
+
+
+@lru_cache(maxsize=1)
+def discover_tool_specs() -> tuple[ToolSpec, ...]:
+    discovered: dict[str, ToolSpec] = {}
+    for module_info in pkgutil.iter_modules(tool_modules.__path__):
+        if module_info.ispkg or module_info.name.startswith("_"):
+            continue
+        module = importlib.import_module(f"{tool_modules.__name__}.{module_info.name}")
+        spec = getattr(module, "TOOL", None)
+        if not isinstance(spec, ToolSpec):
+            raise RuntimeError(f"Tool module {module.__name__} must define TOOL as ToolSpec")
+        tool_name = spec.definition.name
+        if tool_name in discovered:
+            raise RuntimeError(f"Duplicate tool name discovered: {tool_name}")
+        discovered[tool_name] = spec
+    return tuple(discovered[name] for name in sorted(discovered))
+
+
 def build_tool_definitions(*, memory_enabled: bool) -> list[ToolDefinition]:
-    definitions = [
-        ToolDefinition(
-            name="local_time",
-            description=(
-                "Get the exact current local time on the Raspberry Pi. "
-                "Do not use this for ordinary time questions at the start of a session, because the injected session timestamp is usually sufficient. "
-                "Use this only when the injected session timestamp may be stale because the conversation has been open for a while, or when the user explicitly asks for the exact current time right now."
-            ),
-            parameters={
-                "type": "object",
-                "properties": {},
-                "additionalProperties": False,
-            },
-        ),
-        ToolDefinition(
-            name="web_search",
-            description=(
-                "Search the web for current or changing information. "
-                "Required for recent facts and time-sensitive questions such as current officeholders, news, weather, prices, laws, schedules, standings, or anything asked as current, latest, today, now, or recent."
-            ),
-            parameters={
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "The web search query to look up.",
-                    }
-                },
-                "required": ["query"],
-                "additionalProperties": False,
-            },
-        ),
+    availability = ToolAvailability(memory_enabled=memory_enabled)
+    return [
+        spec.definition
+        for spec in discover_tool_specs()
+        if spec.is_enabled(availability)
     ]
-    if memory_enabled:
-        definitions.extend(
-            [
-                ToolDefinition(
-                    name="profile_memory_get",
-                    description=(
-                        "Load the full profile memory document containing stable facts about people, preferences, and household context. "
-                        "If the user asks who a named person is, what their relationship is, or the name may refer to someone in the household, call this before asking a clarification question or assuming they are a public figure. "
-                        "Call this before any profile memory update so you can preserve existing content."
-                    ),
-                    parameters={
-                        "type": "object",
-                        "properties": {},
-                        "additionalProperties": False,
-                    },
-                ),
-                ToolDefinition(
-                    name="profile_memory_update",
-                    description=(
-                        "Replace the full profile memory document with updated Markdown. "
-                        "You must call profile_memory_get first in the current session, preserve unrelated existing facts, and make only the minimal necessary edit. "
-                        "Do not overwrite the whole document with a single new fact."
-                    ),
-                    parameters={
-                        "type": "object",
-                        "properties": {
-                            "updated_markdown": {
-                                "type": "string",
-                                "description": "The complete updated profile memory Markdown document.",
-                            }
-                        },
-                        "required": ["updated_markdown"],
-                        "additionalProperties": False,
-                    },
-                ),
-            ]
-        )
-    return definitions
 
 
 class ToolRegistry:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Any) -> None:
         self._settings = settings
-        memory_enabled = bool(getattr(settings, "memory_enabled", False))
-        self._definitions = build_tool_definitions(memory_enabled=memory_enabled)
+        self._availability = ToolAvailability(
+            memory_enabled=bool(getattr(settings, "memory_enabled", False))
+        )
+        self._specs_by_name = {
+            spec.definition.name: spec
+            for spec in discover_tool_specs()
+            if spec.is_enabled(self._availability)
+        }
+        self._definitions = [
+            spec.definition for name, spec in sorted(self._specs_by_name.items())
+        ]
         self._session_state = ToolSessionState()
         self._memory_store = (
             MemoryStore.from_path(str(getattr(settings, "memory_dir", "")))
-            if memory_enabled
+            if self._availability.memory_enabled
             else None
         )
         if self._memory_store is not None:
@@ -138,165 +119,16 @@ class ToolRegistry:
         except json.JSONDecodeError as exc:
             raise RuntimeError(f"Invalid tool arguments for {name}: {exc}") from exc
 
-        if name == "local_time":
-            return json.dumps(self._local_time(), ensure_ascii=False)
-        if name == "web_search":
-            query = str(arguments.get("query", "")).strip()
-            if not query:
-                raise RuntimeError("web_search requires a non-empty query")
-            return json.dumps(self._web_search(query), ensure_ascii=False)
-        if name == "profile_memory_get":
-            return json.dumps(self._profile_memory_get(), ensure_ascii=False)
-        if name == "profile_memory_update":
-            updated_markdown = str(arguments.get("updated_markdown", ""))
-            if not updated_markdown.strip():
-                raise RuntimeError("profile_memory_update requires updated_markdown")
-            return json.dumps(
-                self._profile_memory_update(updated_markdown),
-                ensure_ascii=False,
-            )
-        raise RuntimeError(f"Unknown tool: {name}")
+        spec = self._specs_by_name.get(name)
+        if spec is None:
+            raise RuntimeError(f"Unknown tool: {name}")
 
-    def _local_time(self) -> dict[str, Any]:
-        now = datetime.now().astimezone()
-        return {
-            "local_time": now.strftime("%Y-%m-%d %H:%M:%S"),
-            "timezone": now.tzname() or "local",
-            "iso8601": now.isoformat(),
-        }
-
-    def _web_search(self, query: str) -> dict[str, Any]:
-        LOGGER.info("Running OpenAI web_search tool for query: %s", query)
-        user_location = build_web_search_user_location(
-            city=self._settings.location_city,
-            region=self._settings.location_region,
-            country_code=self._settings.location_country_code,
-            timezone=self._settings.location_timezone,
-        )
-        tool_config: dict[str, Any] = {"type": "web_search"}
-        if user_location is not None:
-            tool_config["user_location"] = user_location
-
-        body = {
-            "model": self._settings.web_search_model,
-            "input": (
-                "Search the web and answer briefly in the same language as the query. "
-                "Focus on current factual information. Include at most three short sources.\n\n"
-                f"Query: {query}"
+        result = spec.execute(
+            ToolContext(
+                settings=self._settings,
+                session_state=self._session_state,
+                memory_store=self._memory_store,
             ),
-            "tools": [tool_config],
-        }
-        req = request.Request(
-            url="https://api.openai.com/v1/responses",
-            data=json.dumps(body).encode("utf-8"),
-            headers={
-                "Authorization": f"Bearer {self._settings.openai_api_key}",
-                "Content-Type": "application/json",
-            },
-            method="POST",
+            arguments,
         )
-        try:
-            with request.urlopen(req, timeout=20) as response:
-                raw = json.loads(response.read().decode("utf-8"))
-        except error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="ignore")
-            raise RuntimeError(f"OpenAI web_search HTTP {exc.code}: {detail}") from exc
-        except error.URLError as exc:
-            raise RuntimeError(f"OpenAI web_search failed: {exc.reason}") from exc
-
-        summary = self._extract_response_text(raw)
-        sources = self._extract_sources(raw)
-        return {
-            "query": query,
-            "summary": summary,
-            "sources": sources[:3],
-        }
-
-    def _profile_memory_get(self) -> dict[str, Any]:
-        if self._memory_store is None:
-            raise RuntimeError("profile memory is not enabled")
-        self._session_state.profile_loaded = True
-        return {
-            "profile_markdown": self._memory_store.read_profile(),
-        }
-
-    def _profile_memory_update(self, updated_markdown: str) -> dict[str, Any]:
-        if self._memory_store is None:
-            raise RuntimeError("profile memory is not enabled")
-        current_profile = self._memory_store.read_profile()
-        if (
-            current_profile.strip()
-            and current_profile.strip() != default_profile_markdown().strip()
-            and not self._session_state.profile_loaded
-        ):
-            raise RuntimeError(
-                "profile_memory_update requires profile_memory_get first in the current session so existing profile content is preserved."
-            )
-        try:
-            saved = self._memory_store.update_profile(updated_markdown)
-        except MemoryValidationError as exc:
-            raise RuntimeError(str(exc)) from exc
-        return {
-            "status": "updated",
-            "profile_markdown": saved,
-        }
-
-    def _extract_response_text(self, payload: dict[str, Any]) -> str:
-        output_text = payload.get("output_text")
-        if isinstance(output_text, str) and output_text.strip():
-            return output_text.strip()
-
-        output = payload.get("output")
-        if not isinstance(output, list):
-            return ""
-
-        text_parts: list[str] = []
-        for item in output:
-            if not isinstance(item, dict):
-                continue
-            if item.get("type") != "message":
-                continue
-            content = item.get("content")
-            if not isinstance(content, list):
-                continue
-            for content_item in content:
-                if not isinstance(content_item, dict):
-                    continue
-                if content_item.get("type") in {"output_text", "text"}:
-                    text_value = content_item.get("text")
-                    if isinstance(text_value, str):
-                        text_parts.append(text_value)
-        return "".join(text_parts).strip()
-
-    def _extract_sources(self, payload: dict[str, Any]) -> list[dict[str, str]]:
-        output = payload.get("output")
-        if not isinstance(output, list):
-            return []
-
-        sources: list[dict[str, str]] = []
-        for item in output:
-            if not isinstance(item, dict):
-                continue
-            content = item.get("content")
-            if not isinstance(content, list):
-                continue
-            for content_item in content:
-                if not isinstance(content_item, dict):
-                    continue
-                annotations = content_item.get("annotations")
-                if not isinstance(annotations, list):
-                    continue
-                for annotation in annotations:
-                    if not isinstance(annotation, dict):
-                        continue
-                    url = annotation.get("url")
-                    if not isinstance(url, str) or not url:
-                        continue
-                    title = annotation.get("title")
-                    source = {
-                        "url": url,
-                        "title": title if isinstance(title, str) and title else url,
-                    }
-                    if source not in sources:
-                        sources.append(source)
-        return sources
+        return json.dumps(result, ensure_ascii=False)

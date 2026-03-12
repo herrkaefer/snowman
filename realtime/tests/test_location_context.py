@@ -58,16 +58,6 @@ class LocationContextTests(unittest.TestCase):
 
         self.assertNotIn("Default local context for the assistant and current user:", instructions)
 
-    def test_runtime_instructions_strip_legacy_name_line_from_system_prompt(self) -> None:
-        instructions = build_session_instructions(
-            "Juniper",
-            "Your name is Snowman. Base prompt.",
-            now=datetime(2026, 3, 8, 12, 0, tzinfo=timezone.utc),
-        )
-
-        self.assertIn("Your name is Juniper.", instructions)
-        self.assertEqual(instructions.count("Your name is "), 1)
-
     def test_build_web_search_user_location_returns_none_without_required_fields(self) -> None:
         self.assertIsNone(
             build_web_search_user_location(
@@ -133,7 +123,7 @@ class LocationContextTests(unittest.TestCase):
             captured["body"] = json.loads(req.data.decode("utf-8"))
             return _DummyHTTPResponse({"output_text": "ok", "output": []})
 
-        with patch("realtime.snowman_realtime.tools.request.urlopen", fake_urlopen):
+        with patch("realtime.snowman_realtime.tool_modules.web_search.request.urlopen", fake_urlopen):
             result = json.loads(registry.execute("web_search", '{"query":"weather"}'))
 
         self.assertEqual(result["summary"], "ok")
@@ -164,7 +154,7 @@ class LocationContextTests(unittest.TestCase):
             captured["body"] = json.loads(req.data.decode("utf-8"))
             return _DummyHTTPResponse({"output_text": "ok", "output": []})
 
-        with patch("realtime.snowman_realtime.tools.request.urlopen", fake_urlopen):
+        with patch("realtime.snowman_realtime.tool_modules.web_search.request.urlopen", fake_urlopen):
             registry.execute("web_search", '{"query":"weather"}')
 
         self.assertEqual(captured["body"]["tools"], [{"type": "web_search"}])
