@@ -32,7 +32,8 @@ def build_tool_definitions(*, memory_enabled: bool) -> list[ToolDefinition]:
             name="local_time",
             description=(
                 "Get the exact current local time on the Raspberry Pi. "
-                "Use this only when the provided session timestamp may be stale or the user explicitly wants the precise current time."
+                "Do not use this for ordinary time questions at the start of a session, because the injected session timestamp is usually sufficient. "
+                "Use this only when the injected session timestamp may be stale because the conversation has been open for a while, or when the user explicitly asks for the exact current time right now."
             ),
             parameters={
                 "type": "object",
@@ -66,6 +67,7 @@ def build_tool_definitions(*, memory_enabled: bool) -> list[ToolDefinition]:
                     name="profile_memory_get",
                     description=(
                         "Load the full profile memory document containing stable facts about people, preferences, and household context. "
+                        "If the user asks who a named person is, what their relationship is, or the name may refer to someone in the household, call this before asking a clarification question or assuming they are a public figure. "
                         "Call this before any profile memory update so you can preserve existing content."
                     ),
                     parameters={

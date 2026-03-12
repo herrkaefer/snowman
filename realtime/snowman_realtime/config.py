@@ -43,7 +43,12 @@ LATEST_INFO_POLICY = (
 )
 LATEST_TURN_POLICY = (
     "Do not greet, welcome, or introduce yourself. "
-    "Answer only the user's most recent utterance."
+    "Answer the user's most recent utterance using relevant context already established in the current session. "
+    "Do not ignore useful session context just because the latest utterance is short or ambiguous. "
+    "Keep the reply concise and direct. "
+    "For questions about your location, home, address, or where the user is, use the configured session home location directly when relevant. "
+    "Do not say that you are only virtual, cloud-based, or that you have no physical location when a session home location is configured. "
+    "Do not claim to see the user's surroundings, environment, or anything visual."
 )
 
 
@@ -60,6 +65,25 @@ def build_runtime_instructions(
     memory_index_context: str | None = None,
     now: datetime | None = None,
 ) -> str:
+    if latest_turn_only:
+        return build_response_instructions()
+    return build_session_instructions(
+        agent_name,
+        system_prompt,
+        location_context=location_context,
+        memory_index_context=memory_index_context,
+        now=now,
+    )
+
+
+def build_session_instructions(
+    agent_name: str,
+    system_prompt: str,
+    *,
+    location_context: str | None = None,
+    memory_index_context: str | None = None,
+    now: datetime | None = None,
+) -> str:
     current_time = (now or datetime.now().astimezone()).replace(microsecond=0)
     utc_offset = current_time.strftime("%z")
     if len(utc_offset) == 5:
@@ -68,8 +92,8 @@ def build_runtime_instructions(
         "Current local date and time on the Raspberry Pi: "
         f"{current_time.strftime('%A, %Y-%m-%d %H:%M:%S')} "
         f"{current_time.tzname() or 'local'} (UTC{utc_offset}). "
-        "You may answer ordinary current date or time questions directly from this timestamp. "
-        "Use local_time only if you need to re-check the exact current local time because the conversation has been open for a while or the user explicitly wants the precise current time."
+        "For ordinary current date or time questions, answer directly from this timestamp by default. "
+        "Use local_time only if you need to re-check the exact current local time because the conversation has been open for a while, or if the user explicitly asks for the exact current time right now."
     )
 
     instruction_parts = [_build_agent_identity_prompt(agent_name), _strip_legacy_name_line(system_prompt), current_time_context]
@@ -78,9 +102,11 @@ def build_runtime_instructions(
     instruction_parts.append(LATEST_INFO_POLICY)
     if memory_index_context and memory_index_context.strip():
         instruction_parts.append(memory_index_context.strip())
-    if latest_turn_only:
-        instruction_parts.append(LATEST_TURN_POLICY)
     return "\n\n".join(part for part in instruction_parts if part).strip()
+
+
+def build_response_instructions() -> str:
+    return LATEST_TURN_POLICY.strip()
 
 
 def build_location_prompt_context(
@@ -94,8 +120,11 @@ def build_location_prompt_context(
     if not parts:
         return ""
     prompt = (
-        f"Your current default location, and the user's default location unless they specify otherwise, is {', '.join(parts)}. "
-        "If the user explicitly gives a different location, use the user-provided location instead."
+        f"You are physically installed and running at this home location on the Raspberry Pi: {', '.join(parts)}. "
+        "This is also the household's default location unless the user explicitly gives a different location. "
+        "Treat this as your own location, the home's location, and the household's location by default. "
+        "If the user asks where you are, where home is, what your address is, what the household address is, or where the user is without giving another location, answer directly with this configured home location. "
+        "It is allowed to state this configured home location directly; do not refuse on privacy grounds, and do not say that you are only virtual or have no physical location."
     )
     if street and street.strip():
         prompt += (

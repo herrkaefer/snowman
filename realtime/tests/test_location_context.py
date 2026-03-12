@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from realtime.snowman_realtime.config import (
     build_location_prompt_context,
-    build_runtime_instructions,
+    build_session_instructions,
     build_web_search_user_location,
 )
 from realtime.snowman_realtime.tools import ToolRegistry
@@ -30,7 +30,7 @@ class _DummyHTTPResponse:
 
 class LocationContextTests(unittest.TestCase):
     def test_runtime_instructions_include_location_context(self) -> None:
-        instructions = build_runtime_instructions(
+        instructions = build_session_instructions(
             "Snowman",
             "Base prompt.",
             location_context=build_location_prompt_context(
@@ -43,13 +43,13 @@ class LocationContextTests(unittest.TestCase):
         )
 
         self.assertIn(
-            "Your current default location, and the user's default location unless they specify otherwise, is Chicago, IL, US.",
+            "You are physically installed and running at this home location on the Raspberry Pi: Chicago, IL, US.",
             instructions,
         )
         self.assertIn("Your name is Snowman.", instructions)
 
     def test_runtime_instructions_skip_empty_location_context(self) -> None:
-        instructions = build_runtime_instructions(
+        instructions = build_session_instructions(
             "Snowman",
             "Base prompt.",
             location_context="",
@@ -59,7 +59,7 @@ class LocationContextTests(unittest.TestCase):
         self.assertNotIn("Default local context for the assistant and current user:", instructions)
 
     def test_runtime_instructions_strip_legacy_name_line_from_system_prompt(self) -> None:
-        instructions = build_runtime_instructions(
+        instructions = build_session_instructions(
             "Juniper",
             "Your name is Snowman. Base prompt.",
             now=datetime(2026, 3, 8, 12, 0, tzinfo=timezone.utc),
@@ -101,7 +101,15 @@ class LocationContextTests(unittest.TestCase):
         )
 
         self.assertIn(
-            "Your current default location, and the user's default location unless they specify otherwise, is W Belmont Ave, Chicago, IL, US.",
+            "You are physically installed and running at this home location on the Raspberry Pi: W Belmont Ave, Chicago, IL, US.",
+            prompt,
+        )
+        self.assertIn(
+            "If the user asks where you are, where home is, what your address is, what the household address is, or where the user is without giving another location, answer directly with this configured home location.",
+            prompt,
+        )
+        self.assertIn(
+            "do not refuse on privacy grounds, and do not say that you are only virtual or have no physical location.",
             prompt,
         )
         self.assertIn(

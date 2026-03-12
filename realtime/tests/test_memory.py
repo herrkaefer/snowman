@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from realtime.snowman_realtime.config import build_runtime_instructions
+from realtime.snowman_realtime.config import build_runtime_instructions, build_session_instructions
 from realtime.snowman_realtime.config_ui import (
     _memory_payload_for_api,
     _restore_profile_baseline,
@@ -83,9 +83,12 @@ class MemoryStoreTests(unittest.TestCase):
 
 class MemoryToolTests(unittest.TestCase):
     def test_build_tool_definitions_includes_profile_tools_when_enabled(self) -> None:
-        names = [definition.name for definition in build_tool_definitions(memory_enabled=True)]
+        definitions = build_tool_definitions(memory_enabled=True)
+        names = [definition.name for definition in definitions]
         self.assertIn("profile_memory_get", names)
         self.assertIn("profile_memory_update", names)
+        profile_get = next(definition for definition in definitions if definition.name == "profile_memory_get")
+        self.assertIn("before asking a clarification question", profile_get.description)
 
     def test_tool_registry_profile_get_and_update(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -169,8 +172,8 @@ class MemoryToolTests(unittest.TestCase):
 
 
 class MemoryPromptTests(unittest.TestCase):
-    def test_runtime_instructions_include_memory_index_context(self) -> None:
-        instructions = build_runtime_instructions(
+    def test_session_instructions_include_memory_index_context(self) -> None:
+        instructions = build_session_instructions(
             "Snowman",
             "Base prompt.",
             memory_index_context="# Memory Index\n\n## profile\nretrieval_tools: profile_memory_get",

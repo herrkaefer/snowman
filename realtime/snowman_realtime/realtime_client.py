@@ -9,7 +9,11 @@ from collections.abc import Callable
 
 import websocket
 
-from .config import Settings, build_location_prompt_context, build_runtime_instructions
+from .config import (
+    Settings,
+    build_location_prompt_context,
+    build_session_instructions,
+)
 from .events import (
     ResponseAudioChunk,
     ResponseDone,
@@ -66,7 +70,7 @@ class RealtimeVoiceAgent:
         return self._memory_store.read_memory_index()
 
     def _session_instructions(self) -> str:
-        return build_runtime_instructions(
+        return build_session_instructions(
             self._settings.agent_name,
             self._settings.system_prompt,
             location_context=build_location_prompt_context(
@@ -76,20 +80,6 @@ class RealtimeVoiceAgent:
                 country_code=self._settings.location_country_code,
             ),
             memory_index_context=self._memory_index_context(),
-        )
-
-    def _response_instructions(self) -> str:
-        return build_runtime_instructions(
-            self._settings.agent_name,
-            self._settings.system_prompt,
-            location_context=build_location_prompt_context(
-                street=self._settings.location_street,
-                city=self._settings.location_city,
-                region=self._settings.location_region,
-                country_code=self._settings.location_country_code,
-            ),
-            memory_index_context=self._memory_index_context(),
-            latest_turn_only=True,
         )
 
     def connect(self) -> None:
@@ -198,7 +188,6 @@ class RealtimeVoiceAgent:
             {
                 "type": "response.create",
                 "response": {
-                    "instructions": self._response_instructions(),
                     "max_output_tokens": self._settings.response_max_output_tokens,
                 },
             }
