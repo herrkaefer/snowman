@@ -114,7 +114,7 @@ The installer will:
 The config UI runs as the always-on `snowman-config-ui.service`, so you can reopen it later any time to change settings.
 
 <div align="center">
-  <img src="./assets/screenshot-config.png" height="500" alt="Snowman Config UI">
+  <img src="./assets/screenshot-config.png" width="600" alt="Snowman Config UI">
 </div>
 
 Open it from another device on the same network:
