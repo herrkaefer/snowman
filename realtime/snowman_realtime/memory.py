@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
+
+
+DEFAULT_RECENT_SESSION_LIMIT = 50
 
 
 class MemoryValidationError(RuntimeError):
@@ -14,6 +18,7 @@ class MemoryPaths:
     profile_path: Path
     index_path: Path
     baseline_path: Path
+    recent_sessions_path: Path
 
 
 def default_profile_markdown() -> str:
@@ -40,11 +45,11 @@ def render_memory_index_markdown() -> str:
         "- use_when: identity, family members, names of people in the household, preferences, persistent household facts\n"
         "- avoid_when: recent chat recall, reminders, dated events\n\n"
         "## recent_conversation\n"
-        "- description: Reserved for recent session recall. Not implemented yet.\n"
-        "- retrieval_tools: none\n"
-        "- edit_tools: none\n"
-        "- use_when: reserved\n"
-        "- avoid_when: stable fact lookup\n\n"
+        "- description: Automatically stored compact summaries of completed recent sessions for later conversational recall.\n"
+        "- retrieval_tools: future recent_conversation_search\n"
+        "- edit_tools: system-managed only\n"
+        "- use_when: what we discussed earlier, recent context recall across sessions\n"
+        "- avoid_when: stable fact lookup, authoritative household facts\n\n"
         "## schedule\n"
         "- description: Reserved for future calendar or reminder workflows. Not implemented yet.\n"
         "- retrieval_tools: none\n"
@@ -57,7 +62,8 @@ def render_memory_index_markdown() -> str:
         "- For household names such as family members, do not assume the user means a public figure when profile memory is a plausible source.\n"
         "- Before any `profile_memory_update`, you must call `profile_memory_get` in the current session.\n"
         "- When updating profile memory, preserve unrelated existing facts and make only the minimal necessary edit.\n"
-        "- `recent_conversation` and `schedule` are not available yet.\n"
+        "- `recent_conversation` is stored automatically after completed sessions and is intended for later recall tools, not direct prompt injection.\n"
+        "- `schedule` is not available yet.\n"
         "- For current or changing facts, still use `web_search` instead of memory.\n"
     )
 
@@ -69,6 +75,7 @@ class MemoryStore:
             profile_path=base_dir / "profile.md",
             index_path=base_dir / "MEMORY.md",
             baseline_path=base_dir / "profile.baseline.md",
+            recent_sessions_path=base_dir / "recent_sessions.jsonl",
         )
 
     @classmethod
@@ -123,6 +130,46 @@ class MemoryStore:
         self._write_text(self._paths.profile_path, baseline)
         self._write_text(self._paths.index_path, render_memory_index_markdown())
         return baseline
+
+    def read_recent_sessions(self) -> list[dict[str, object]]:
+        self.ensure_initialized()
+        path = self._paths.recent_sessions_path
+        if not path.exists():
+            return []
+
+        records: list[dict[str, object]] = []
+        with path.open("r", encoding="utf-8") as handle:
+            for raw_line in handle:
+                line = raw_line.strip()
+                if not line:
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(record, dict):
+                    records.append(record)
+        return records
+
+    def append_recent_session(
+        self,
+        record: dict[str, object],
+        *,
+        limit: int = DEFAULT_RECENT_SESSION_LIMIT,
+    ) -> None:
+        self.ensure_initialized()
+        records = self.read_recent_sessions()
+        records.append(record)
+        if limit > 0:
+            records = records[-limit:]
+
+        with self._paths.recent_sessions_path.open("w", encoding="utf-8") as handle:
+            for item in records:
+                line = json.dumps(item, ensure_ascii=False)
+                if "\n" in line or "\r" in line:
+                    raise RuntimeError("Recent session record must serialize to a single JSONL line.")
+                handle.write(line + "\n")
+            handle.flush()
 
     def _write_text(self, path: Path, content: str) -> None:
         normalized = content.replace("\r\n", "\n").strip() + "\n"

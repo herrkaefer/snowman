@@ -34,6 +34,12 @@ from .events import (
     ToolCallRequested,
     TranscriptFinal,
 )
+from .memory import MemoryStore
+from .recent_conversation import (
+    SessionTurnBuffer,
+    build_recent_session_record,
+    compact_recent_conversation,
+)
 from .realtime_client import RealtimeConnectionClosed, RealtimeVoiceAgent
 from .status_led import SessionStatusLed
 from .tools import ToolRegistry
@@ -395,6 +401,7 @@ class SnowmanRealtimeAssistant:
         turn_index = 0
         play_session_end_cue = False
         interrupted_response_ids: set[str] = set()
+        session_buffer = SessionTurnBuffer()
 
         def handle_event(event: object) -> None:
             nonlocal session_state, turn_state
@@ -543,13 +550,16 @@ class SnowmanRealtimeAssistant:
                 ):
                     return
                 LOGGER.info("Response text final: %s", event.text)
+                session_buffer.append_assistant_text(event.text)
                 return
 
             if isinstance(event, SessionStarted):
                 LOGGER.info("Realtime session established: %s", event.session_id)
+                session_buffer.record_session_started(event.session_id)
                 return
 
             if isinstance(event, ToolCallRequested):
+                session_buffer.record_tool_name(event.name)
                 self._handle_tool_call(
                     client=client,
                     event=event,
@@ -562,6 +572,7 @@ class SnowmanRealtimeAssistant:
             if isinstance(event, TranscriptFinal):
                 transcript = event.text.strip()
                 LOGGER.info("Final transcript: %s", transcript)
+                session_buffer.append_user_text(transcript)
                 if self._is_end_transcript(transcript) and state is not None:
                     state.session_end_requested = True
                 return
@@ -746,6 +757,7 @@ class SnowmanRealtimeAssistant:
                 self._play_session_end_cue(player)
             if client is not None:
                 client.close()
+            self._persist_recent_conversation(session_buffer)
             player.close()
             if session_state != SessionWindowState.SESSION_END:
                 self._set_session_state(session_state, SessionWindowState.SESSION_END)
@@ -762,6 +774,7 @@ class SnowmanRealtimeAssistant:
         last_activity = time.monotonic()
         first_response_audio_at: float | None = None
         response_done_at: float | None = None
+        session_buffer = SessionTurnBuffer()
 
         def _set_should_stop() -> None:
             nonlocal should_stop
@@ -807,13 +820,16 @@ class SnowmanRealtimeAssistant:
 
             if isinstance(event, ResponseTextDone):
                 LOGGER.info("Response text final: %s", event.text)
+                session_buffer.append_assistant_text(event.text)
                 return
 
             if isinstance(event, SessionStarted):
                 LOGGER.info("Realtime session established: %s", event.session_id)
+                session_buffer.record_session_started(event.session_id)
                 return
 
             if isinstance(event, ToolCallRequested):
+                session_buffer.record_tool_name(event.name)
                 self._handle_tool_call(
                     client=client,
                     event=event,
@@ -824,6 +840,7 @@ class SnowmanRealtimeAssistant:
             if isinstance(event, TranscriptFinal):
                 transcript = event.text.strip()
                 LOGGER.info("Final transcript: %s", transcript)
+                session_buffer.append_user_text(transcript)
                 if self._is_end_transcript(transcript):
                     should_stop = True
                 return
@@ -907,8 +924,28 @@ class SnowmanRealtimeAssistant:
             self._wake_detector.stop()
             if client is not None:
                 client.close()
+            self._persist_recent_conversation(session_buffer)
             player.close()
             LOGGER.info("Realtime session finished in %.2fs", time.monotonic() - session_started_at)
+
+    def _persist_recent_conversation(self, session_buffer: SessionTurnBuffer) -> None:
+        if not getattr(self._settings, "memory_enabled", False):
+            return
+        snapshot = session_buffer.snapshot()
+        if not snapshot.has_user_content():
+            LOGGER.info("Skipping recent conversation summary: no usable transcript content")
+            return
+        try:
+            compact = compact_recent_conversation(self._settings, snapshot)
+            record = build_recent_session_record(snapshot, compact)
+            memory_dir = getattr(self._settings, "memory_dir", "").strip()
+            if not memory_dir:
+                LOGGER.info("Skipping recent conversation summary: memory_dir is not configured")
+                return
+            MemoryStore.from_path(memory_dir).append_recent_session(record)
+            LOGGER.info("Stored recent conversation summary: %s", record["session_id"])
+        except Exception:
+            LOGGER.exception("Failed to persist recent conversation summary")
 
     def _connect_and_request_response(
         self,
