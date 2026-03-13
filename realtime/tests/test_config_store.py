@@ -75,6 +75,7 @@ class ConfigStoreTests(unittest.TestCase):
         self.assertEqual(config_values["porcupine_access_key"], "saved-porcupine")
         self.assertEqual(config_values["location_city"], "Chicago")
         self.assertEqual(config_values["tool_config"], build_default_tool_config())
+        self.assertEqual(config_values["advanced"]["recent_conversation_compact_model"], "gpt-4o-mini")
 
     def test_load_config_values_reads_identity_file(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

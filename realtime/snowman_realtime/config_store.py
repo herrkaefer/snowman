@@ -9,6 +9,7 @@ from pathlib import Path
 from zoneinfo import available_timezones
 
 from .country_data import COUNTRY_OPTIONS
+from .recent_conversation import COMPACT_MODEL, COMPACT_MODEL_OPTIONS
 
 
 APP_DIR = Path(__file__).resolve().parents[1]
@@ -128,6 +129,7 @@ DEFAULT_ADVANCED_CONFIG: dict[str, object] = {
     "realtime_retry_backoff_max_seconds": 3.0,
     "memory_enabled": True,
     "memory_dir": DEFAULT_MEMORY_DIR,
+    "recent_conversation_compact_model": COMPACT_MODEL,
 }
 
 
@@ -408,6 +410,16 @@ def validate_config_values(payload: dict[str, object]) -> list[str]:
         playback_device = str(advanced.get("playback_device", "auto")).strip()
         if not playback_device:
             errors.append("Speaker output must be a valid device selection.")
+
+        compact_model = str(
+            advanced.get("recent_conversation_compact_model", COMPACT_MODEL)
+        ).strip()
+        if compact_model and compact_model not in COMPACT_MODEL_OPTIONS:
+            errors.append(
+                "Recent conversation compact model must be one of: "
+                + ", ".join(COMPACT_MODEL_OPTIONS)
+                + "."
+            )
 
     tool_config = payload.get("tool_config", {})
     if not isinstance(tool_config, dict):

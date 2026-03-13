@@ -116,7 +116,10 @@ class RecentConversationMemoryStoreTests(unittest.TestCase):
 
 class RecentConversationCompactTests(unittest.TestCase):
     def test_compact_recent_conversation_parses_json_object_response(self) -> None:
-        settings = SimpleNamespace(openai_api_key="test-key")
+        settings = SimpleNamespace(
+            openai_api_key="test-key",
+            recent_conversation_compact_model="gpt-4.1-mini",
+        )
         buffer = SessionTurnBuffer()
         buffer.record_session_started("sess_123")
         buffer.append_user_text("Who is Mira?")
@@ -154,6 +157,7 @@ class RecentConversationCompactTests(unittest.TestCase):
             self.assertEqual(timeout, 15)
             self.assertEqual(req.full_url, "https://api.openai.com/v1/chat/completions")
             body = json.loads(req.data.decode("utf-8"))
+            self.assertEqual(body["model"], "gpt-4.1-mini")
             self.assertEqual(body["response_format"], {"type": "json_object"})
             self.assertIn("summary must be written in the same language indicated by language", body["messages"][0]["content"])
             self.assertIn("topics must be an array of short English topic labels", body["messages"][0]["content"])

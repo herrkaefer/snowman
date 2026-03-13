@@ -5,13 +5,24 @@ import threading
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib import error, request
 
-from .config import Settings
+
+if TYPE_CHECKING:
+    from .config import Settings
 
 
-COMPACT_MODEL = "gpt-4o-mini"
+COMPACT_MODEL_OPTIONS = (
+    "gpt-4o-mini",
+    "gpt-5.2",
+    "gpt-5",
+    "gpt-5-mini",
+    "gpt-5-nano",
+    "gpt-4.1-mini",
+    "gpt-4.1",
+)
+COMPACT_MODEL = COMPACT_MODEL_OPTIONS[0]
 COMPACT_TIMEOUT_SECONDS = 15
 
 
@@ -83,7 +94,7 @@ class SessionTurnBuffer:
 
 
 def compact_recent_conversation(
-    settings: Settings,
+    settings: "Settings",
     snapshot: SessionTurnBufferSnapshot,
 ) -> dict[str, object]:
     prompt = (
@@ -106,7 +117,8 @@ def compact_recent_conversation(
         "turns": list(snapshot.turns),
     }
     body = {
-        "model": COMPACT_MODEL,
+        "model": str(getattr(settings, "recent_conversation_compact_model", COMPACT_MODEL)).strip()
+        or COMPACT_MODEL,
         "temperature": 0,
         "response_format": {"type": "json_object"},
         "messages": [

@@ -624,6 +624,11 @@ HTML_PAGE = """<!doctype html>
             <textarea id="memory_index_markdown" readonly></textarea>
           </div>
         </div>
+        <div class="tool-field">
+          <label for="recent_conversation_compact_model">Conversation Compact Model</label>
+          <select id="recent_conversation_compact_model"></select>
+          <div class="hint">Which model to use for end-of-session recent conversation summaries.</div>
+        </div>
       </section>
     </div>
 
@@ -656,6 +661,7 @@ HTML_PAGE = """<!doctype html>
         advanced.audio_device_index = -1;
       }
       advanced.playback_device = $("playback_device").value || "auto";
+      advanced.recent_conversation_compact_model = $("recent_conversation_compact_model").value || "gpt-4o-mini";
       return {
         agent_name: $("agent_name").value,
         provider: $("provider").value,
@@ -804,6 +810,11 @@ HTML_PAGE = """<!doctype html>
     function populateMemory(memory) {
       $("profile_markdown").value = memory.profile_markdown || "";
       $("memory_index_markdown").value = memory.memory_index_markdown || "";
+      renderSelectOptions(
+        "recent_conversation_compact_model",
+        memory.recent_conversation_compact_model_options || [],
+        memory.recent_conversation_compact_model || "gpt-4o-mini"
+      );
       $("memory_status").textContent = memory.memory_enabled
         ? `Memory is enabled. Storage: ${memory.memory_dir}. Baseline: ${memory.baseline_exists ? "saved" : "not saved"}.`
         : `Memory is disabled in runtime config. You can still inspect and edit files here. Storage: ${memory.memory_dir}. Baseline: ${memory.baseline_exists ? "saved" : "not saved"}.`;
@@ -1435,10 +1446,17 @@ def _memory_store_for_config(config_payload: dict[str, object]) -> MemoryStore:
 
 
 def _memory_payload_for_api(config_payload: dict[str, object]) -> dict[str, object]:
+    from .recent_conversation import COMPACT_MODEL, COMPACT_MODEL_OPTIONS
+
     store = _memory_store_for_config(config_payload)
     store.ensure_initialized()
     advanced = config_payload.get("advanced", {})
     memory_enabled = bool(advanced.get("memory_enabled", False)) if isinstance(advanced, dict) else False
+    compact_model = (
+        str(advanced.get("recent_conversation_compact_model", COMPACT_MODEL)).strip()
+        if isinstance(advanced, dict)
+        else COMPACT_MODEL
+    ) or COMPACT_MODEL
     return {
         "memory_enabled": memory_enabled,
         "memory_dir": str(store.paths.base_dir),
@@ -1448,6 +1466,8 @@ def _memory_payload_for_api(config_payload: dict[str, object]) -> dict[str, obje
         "baseline_exists": store.baseline_exists(),
         "profile_markdown": store.read_profile(),
         "memory_index_markdown": store.read_memory_index(),
+        "recent_conversation_compact_model": compact_model,
+        "recent_conversation_compact_model_options": list(COMPACT_MODEL_OPTIONS),
     }
 
 

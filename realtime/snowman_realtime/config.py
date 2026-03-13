@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .config_store import DEFAULT_MEMORY_DIR, load_config_values
+from .recent_conversation import COMPACT_MODEL
 
 
 BASE_DIR = Path(__file__).resolve().parents[1]
@@ -225,6 +226,7 @@ class Settings:
     realtime_retry_backoff_max_seconds: float
     memory_enabled: bool
     memory_dir: str
+    recent_conversation_compact_model: str
 
     @classmethod
     def load(cls) -> "Settings":
@@ -339,6 +341,11 @@ class Settings:
             realtime_retry_backoff_max_seconds=_get_float(advanced, "realtime_retry_backoff_max_seconds", 3.0),
             memory_enabled=_get_bool(advanced, "memory_enabled", False),
             memory_dir=str(_resolve_path(_get_str(advanced, "memory_dir", DEFAULT_MEMORY_DIR))),
+            recent_conversation_compact_model=_get_str(
+                advanced,
+                "recent_conversation_compact_model",
+                COMPACT_MODEL,
+            ),
         )
 
     @property

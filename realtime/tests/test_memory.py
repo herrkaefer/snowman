@@ -222,6 +222,9 @@ class MemoryConfigUITests(unittest.TestCase):
             self.assertIn("# Memory Index", payload["memory_index_markdown"])
             self.assertIn("- description:", payload["memory_index_markdown"])
             self.assertIn("ask one brief clarification question", payload["memory_index_markdown"])
+            self.assertEqual(payload["recent_conversation_compact_model"], "gpt-4o-mini")
+            self.assertIn("gpt-5.2", payload["recent_conversation_compact_model_options"])
+            self.assertIn("gpt-4.1", payload["recent_conversation_compact_model_options"])
             self.assertFalse(payload["baseline_exists"])
 
     def test_memory_baseline_api_helpers(self) -> None:
