@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REALTIME_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-APP_HOME="${SNOWMAN_APP_HOME:-$HOME/voice-assistant-realtime}"
+APP_HOME="${SNOWMAN_APP_HOME:-$HOME/snowman-realtime}"
 DATA_DIR="${SNOWMAN_DATA_DIR:-${APP_HOME}/data}"
 TARGET="realtime"
 CONFIG_UI_PORT="${SNOWMAN_CONFIG_UI_PORT:-3010}"

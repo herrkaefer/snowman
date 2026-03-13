@@ -4,7 +4,7 @@ set -euo pipefail
 TARGET="realtime"
 REPO_URL="${SNOWMAN_REPO_URL:-https://github.com/herrkaefer/snowman.git}"
 BRANCH="${SNOWMAN_REPO_BRANCH:-main}"
-INSTALL_DIR="${SNOWMAN_INSTALL_DIR:-$HOME/voice-assistant-realtime}"
+INSTALL_DIR="${SNOWMAN_INSTALL_DIR:-$HOME/snowman-realtime}"
 
 usage() {
   cat <<'EOF'

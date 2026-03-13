@@ -105,7 +105,7 @@ bash install-snowman.sh --target realtime
 The installer will:
 
 - install system dependencies
-- clone the repo to `~/voice-assistant-realtime`
+- clone the repo to `~/snowman-realtime`
 - install the realtime services
 - start the config UI on port `3010`
 

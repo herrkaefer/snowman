@@ -15,7 +15,7 @@ usage() {
   cat <<'EOF'
 Usage: ./realtime/scripts/deploy.sh --host <pi_host> --user <pi_user> [--port 22]
 
-Deploys the realtime app to /home/<user>/voice-assistant-realtime/realtime,
+Deploys the realtime app to /home/<user>/snowman-realtime/realtime,
 installs parameterized systemd units, enables the main service and healthcheck
 timer, and restarts the service.
 EOF
@@ -51,8 +51,10 @@ done
 require_command ssh scp tar python3
 
 DEPLOY_HOME="/home/${PI_USER}"
-REALTIME_REMOTE_DIR="${DEPLOY_HOME}/voice-assistant-realtime/realtime"
-DATA_REMOTE_DIR="${DEPLOY_HOME}/voice-assistant-realtime/data"
+APP_REMOTE_DIR="${DEPLOY_HOME}/snowman-realtime"
+LEGACY_APP_REMOTE_DIR="${DEPLOY_HOME}/voice-assistant-realtime"
+REALTIME_REMOTE_DIR="${APP_REMOTE_DIR}/realtime"
+DATA_REMOTE_DIR="${APP_REMOTE_DIR}/data"
 OBSOLETE_REMOTE_PATHS=(
   "${REALTIME_REMOTE_DIR}/ambient_soft_loop.wav"
   "${REALTIME_REMOTE_DIR}/end_cue.wav"
@@ -98,6 +100,7 @@ OBSOLETE_REMOTE_PATHS=(
 
 log "Deploying realtime to ${PI_USER}@${PI_HOST}:${REALTIME_REMOTE_DIR}"
 
+run_remote "if [ -d $(quote_remote "${LEGACY_APP_REMOTE_DIR}") ] && [ ! -e $(quote_remote "${APP_REMOTE_DIR}") ]; then mv $(quote_remote "${LEGACY_APP_REMOTE_DIR}") $(quote_remote "${APP_REMOTE_DIR}"); fi"
 run_remote "mkdir -p $(quote_remote "${REALTIME_REMOTE_DIR}") $(quote_remote "${DATA_REMOTE_DIR}")"
 copy_dir_contents_to_remote "${REALTIME_DIR}" "${REALTIME_REMOTE_DIR}"
 run_remote "chmod 755 \
@@ -122,10 +125,12 @@ done
 run_remote "${cleanup_command}"
 run_remote "find $(quote_remote "${REALTIME_REMOTE_DIR}") -name '._*' -delete -o -name '.DS_Store' -delete"
 
+run_remote "rm -rf $(quote_remote "${REALTIME_REMOTE_DIR}/venv")"
 run_remote "python3 -m venv $(quote_remote "${REALTIME_REMOTE_DIR}/venv")"
 run_remote "$(quote_remote "${REALTIME_REMOTE_DIR}/venv/bin/pip") install --upgrade pip wheel"
 run_remote "$(quote_remote "${REALTIME_REMOTE_DIR}/venv/bin/pip") install -r $(quote_remote "${REALTIME_REMOTE_DIR}/requirements.txt")"
 run_remote "$(quote_remote "${REALTIME_REMOTE_DIR}/venv/bin/python") $(quote_remote "${REALTIME_REMOTE_DIR}/scripts/migrate_legacy_config.py") --data-dir $(quote_remote "${DATA_REMOTE_DIR}") --legacy-env-file $(quote_remote "${REALTIME_REMOTE_DIR}/.env")"
+run_remote "if [ -f $(quote_remote "${DATA_REMOTE_DIR}/config.json") ]; then sed -i 's|${LEGACY_APP_REMOTE_DIR}|${APP_REMOTE_DIR}|g' $(quote_remote "${DATA_REMOTE_DIR}/config.json"); fi"
 
 run_remote "sudo systemctl daemon-reload"
 run_remote "sudo systemctl disable --now snowman-realtime-window-start.timer snowman-realtime-window-stop.timer >/dev/null 2>&1 || true"

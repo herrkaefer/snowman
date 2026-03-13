@@ -41,7 +41,7 @@ Preferred one-command deploy on Raspberry Pi:
 ./realtime/scripts/deploy.sh --host <pi_hostname/ip> --user <username> [--port 22]
 ```
 
-This script handles both first install and later redeploys. It syncs the app to `/home/<user>/voice-assistant-realtime/realtime`, refreshes the virtualenv, installs the parameterized systemd units, migrates legacy realtime `.env` values into `data/config.json` and `data/secrets.json`, enables `snowman-realtime.service` and `snowman-realtime-healthcheck.timer`, and restarts the main service.
+This script handles both first install and later redeploys. It syncs the app to `/home/<user>/snowman-realtime/realtime`, refreshes the virtualenv, installs the parameterized systemd units, migrates legacy realtime `.env` values into `data/config.json` and `data/secrets.json`, enables `snowman-realtime.service` and `snowman-realtime-healthcheck.timer`, and restarts the main service.
 
 For first install and web-based configuration on Raspberry Pi, see the root [`README.md`](../README.md).
 
@@ -220,7 +220,7 @@ sudo install -m 644 systemd/snowman-realtime-window-start.service /etc/systemd/s
 sudo install -m 644 systemd/snowman-realtime-window-start.timer /etc/systemd/system/snowman-realtime-window-start.timer
 sudo install -m 644 systemd/snowman-realtime-window-stop.service /etc/systemd/system/snowman-realtime-window-stop.service
 sudo install -m 644 systemd/snowman-realtime-window-stop.timer /etc/systemd/system/snowman-realtime-window-stop.timer
-sudo install -m 755 scripts/within_runtime_window.sh /home/snowman/voice-assistant-realtime/realtime/scripts/within_runtime_window.sh
+sudo install -m 755 scripts/within_runtime_window.sh /home/snowman/snowman-realtime/realtime/scripts/within_runtime_window.sh
 sudo systemctl daemon-reload
 ```
 
@@ -268,7 +268,7 @@ sudo systemctl stop snowman-realtime.service
 sudo systemctl restart snowman-realtime.service
 sudo systemctl status snowman-realtime.service --no-pager
 sudo systemctl status snowman-config-ui.service --no-pager
-tail -f ~/voice-assistant-realtime/realtime/realtime.log
+tail -f ~/snowman-realtime/realtime/realtime.log
 ```
 
 To verify only one realtime instance is running:
