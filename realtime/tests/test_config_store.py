@@ -33,7 +33,6 @@ class ConfigStoreTests(unittest.TestCase):
                         "provider": "openai",
                         "openai_realtime_model": "gpt-realtime-mini",
                         "openai_voice": "shimmer",
-                        "system_prompt": "Saved prompt",
                         "location_street": "W Belmont Ave",
                         "location_country_code": "United States",
                         "wake_word_sensitivity": 0.65,
@@ -45,6 +44,7 @@ class ConfigStoreTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+            data_dir.joinpath("identity.md").write_text("Saved prompt\n", encoding="utf-8")
             data_dir.joinpath("secrets.json").write_text(
                 json.dumps(
                     {
@@ -73,6 +73,83 @@ class ConfigStoreTests(unittest.TestCase):
         self.assertEqual(config_values["openai_api_key"], "saved-openai")
         self.assertEqual(config_values["porcupine_access_key"], "saved-porcupine")
         self.assertEqual(config_values["location_city"], "Chicago")
+
+    def test_load_config_values_reads_identity_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = Path(temp_dir)
+            data_dir.joinpath("config.json").write_text(
+                json.dumps(
+                    {
+                        "agent_name": "Juniper",
+                        "provider": "openai",
+                        "openai_realtime_model": "gpt-realtime-mini",
+                        "openai_voice": "shimmer",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            data_dir.joinpath("identity.md").write_text(
+                "# Identity\n\n## Role\n- Identity file prompt\n",
+                encoding="utf-8",
+            )
+            data_dir.joinpath("secrets.json").write_text(
+                json.dumps(
+                    {
+                        "openai_api_key": "saved-openai",
+                        "porcupine_access_key": "saved-porcupine",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch.dict(os.environ, {"SNOWMAN_DATA_DIR": temp_dir}, clear=False):
+                config_values = load_config_values(
+                    default_system_prompt=DEFAULT_SYSTEM_PROMPT,
+                )
+
+        self.assertEqual(config_values["system_prompt"], "# Identity\n\n## Role\n- Identity file prompt")
+
+    def test_load_config_values_formats_legacy_identity_prompt(self) -> None:
+        legacy_prompt = (
+            "You are a concise bilingual voice assistant running on a Raspberry Pi at the user's home. "
+            "Voice style: friendly, clear, cheerful, warm, and supportive. "
+            "Reply in one short sentence by default, and use two short sentences only when needed for clarity. "
+            "Reply in the same language as the clearly understood user utterance; if the utterance is unclear, use English."
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = Path(temp_dir)
+            data_dir.joinpath("identity.md").write_text(legacy_prompt, encoding="utf-8")
+            data_dir.joinpath("config.json").write_text(
+                json.dumps(
+                    {
+                        "agent_name": "Juniper",
+                        "provider": "openai",
+                        "openai_realtime_model": "gpt-realtime-mini",
+                        "openai_voice": "shimmer",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            data_dir.joinpath("secrets.json").write_text(
+                json.dumps(
+                    {
+                        "openai_api_key": "saved-openai",
+                        "porcupine_access_key": "saved-porcupine",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch.dict(os.environ, {"SNOWMAN_DATA_DIR": temp_dir}, clear=False):
+                config_values = load_config_values(
+                    default_system_prompt=DEFAULT_SYSTEM_PROMPT,
+                )
+
+        self.assertIn("# Identity", config_values["system_prompt"])
+        self.assertIn("## Role", config_values["system_prompt"])
+        self.assertIn("## Tone", config_values["system_prompt"])
+        self.assertIn("## Response Style", config_values["system_prompt"])
+        self.assertIn("## Language", config_values["system_prompt"])
 
     def test_merge_blank_secret_preserves_current_secret(self) -> None:
         merged = merge_config_values(
@@ -167,6 +244,7 @@ class ConfigStoreTests(unittest.TestCase):
                 data_dir=Path(temp_dir),
                 config_path=Path(temp_dir) / "config.json",
                 secrets_path=Path(temp_dir) / "secrets.json",
+                identity_path=Path(temp_dir) / "identity.md",
             )
             write_config_files(
                 paths,
@@ -194,15 +272,18 @@ class ConfigStoreTests(unittest.TestCase):
 
             config_payload = json.loads(paths.config_path.read_text(encoding="utf-8"))
             secrets_payload = json.loads(paths.secrets_path.read_text(encoding="utf-8"))
+            identity_markdown = paths.identity_path.read_text(encoding="utf-8")
 
         self.assertEqual(config_payload["agent_name"], "Juniper")
         self.assertEqual(config_payload["openai_realtime_model"], "gpt-realtime-mini")
         self.assertEqual(config_payload["openai_voice"], "shimmer")
+        self.assertNotIn("system_prompt", config_payload)
         self.assertEqual(config_payload["location_street"], "W Belmont Ave")
         self.assertEqual(config_payload["wake_word_sensitivity"], 0.6)
         self.assertEqual(config_payload["output_gain"], 0.35)
         self.assertEqual(config_payload["cue_output_gain"], 0.78)
         self.assertEqual(config_payload["custom_wake_keyword_path"], "/tmp/custom.ppn")
+        self.assertEqual(identity_markdown, "Prompt\n")
         self.assertEqual(secrets_payload["openai_api_key"], "test-openai")
         self.assertEqual(secrets_payload["admin_password"], "admin-pass")
 
@@ -295,7 +376,6 @@ class SettingsConfigTests(unittest.TestCase):
                         "provider": "openai",
                         "openai_realtime_model": "gpt-realtime-mini",
                         "openai_voice": "shimmer",
-                        "system_prompt": "Saved prompt",
                         "location_street": "W Belmont Ave",
                         "wake_word_sensitivity": 0.6,
                         "output_gain": 0.35,
@@ -305,6 +385,7 @@ class SettingsConfigTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+            data_dir.joinpath("identity.md").write_text("Saved prompt\n", encoding="utf-8")
             data_dir.joinpath("secrets.json").write_text(
                 json.dumps(
                     {

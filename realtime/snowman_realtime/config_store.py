@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,11 +15,11 @@ APP_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_DATA_DIR = APP_DIR.parent / "data"
 CONFIG_FILENAME = "config.json"
 SECRETS_FILENAME = "secrets.json"
+IDENTITY_FILENAME = "identity.md"
 SUPPORTED_PROVIDER = "openai"
 LEGACY_BASIC_ENV_TO_CONFIG_KEY = {
     "OPENAI_REALTIME_MODEL": "openai_realtime_model",
     "OPENAI_VOICE": "openai_voice",
-    "SYSTEM_PROMPT": "system_prompt",
     "WAKE_WORD_SENSITIVITY": "wake_word_sensitivity",
     "OUTPUT_GAIN": "output_gain",
     "CUE_OUTPUT_GAIN": "cue_output_gain",
@@ -135,6 +136,7 @@ class ConfigPaths:
     data_dir: Path
     config_path: Path
     secrets_path: Path
+    identity_path: Path
 
 
 def resolve_config_paths() -> ConfigPaths:
@@ -144,7 +146,14 @@ def resolve_config_paths() -> ConfigPaths:
         data_dir=data_dir,
         config_path=data_dir / CONFIG_FILENAME,
         secrets_path=data_dir / SECRETS_FILENAME,
+        identity_path=data_dir / IDENTITY_FILENAME,
     )
+
+
+def load_identity_file(path: Path) -> str:
+    if not path.exists():
+        return ""
+    return _editable_system_prompt(path.read_text(encoding="utf-8"))
 
 
 def load_secrets_file(path: Path) -> dict[str, str]:
@@ -219,10 +228,12 @@ def load_config_values(*, default_system_prompt: str) -> dict[str, object]:
     paths = resolve_config_paths()
     config_payload = load_config_file(paths.config_path)
     secret_payload = load_secrets_file(paths.secrets_path)
+    identity_prompt = load_identity_file(paths.identity_path)
     return materialize_config_values(
         config_payload=config_payload,
         secret_payload=secret_payload,
         default_system_prompt=default_system_prompt,
+        identity_prompt=identity_prompt,
     )
 
 
@@ -231,6 +242,7 @@ def materialize_config_values(
     config_payload: dict[str, object],
     secret_payload: dict[str, str],
     default_system_prompt: str,
+    identity_prompt: str = "",
 ) -> dict[str, object]:
     defaults = default_config_values(default_system_prompt=default_system_prompt)
     advanced_payload = config_payload.get("advanced", {})
@@ -253,6 +265,8 @@ def materialize_config_values(
         if key in DEFAULT_ADVANCED_CONFIG:
             advanced[key] = value
 
+    prompt_value = _editable_system_prompt(identity_prompt) or defaults["system_prompt"]
+
     return {
         "agent_name": str(config_payload.get("agent_name", defaults["agent_name"])).strip(),
         "provider": str(config_payload.get("provider", defaults["provider"])).strip(),
@@ -263,7 +277,7 @@ def materialize_config_values(
             )
         ).strip(),
         "openai_voice": str(config_payload.get("openai_voice", defaults["openai_voice"])).strip(),
-        "system_prompt": str(config_payload.get("system_prompt", defaults["system_prompt"])).strip(),
+        "system_prompt": prompt_value,
         "location_street": str(config_payload.get("location_street", defaults["location_street"])).strip(),
         "wake_word_sensitivity": _coerce_config_value(wake_word_sensitivity, defaults["wake_word_sensitivity"]),
         "output_gain": _coerce_config_value(output_gain, defaults["output_gain"]),
@@ -450,7 +464,6 @@ def write_config_files(paths: ConfigPaths, payload: dict[str, object]) -> None:
         "provider": str(payload["provider"]).strip().lower(),
         "openai_realtime_model": str(payload["openai_realtime_model"]).strip(),
         "openai_voice": str(payload["openai_voice"]).strip(),
-        "system_prompt": _editable_system_prompt(str(payload["system_prompt"])),
         "location_street": str(payload.get("location_street", "")).strip(),
         "wake_word_sensitivity": float(payload.get("wake_word_sensitivity", 0.5)),
         "output_gain": float(payload.get("output_gain", 0.5)),
@@ -467,6 +480,13 @@ def write_config_files(paths: ConfigPaths, payload: dict[str, object]) -> None:
         json.dump(config_payload, handle, indent=2, ensure_ascii=True)
         handle.write("\n")
     config_tmp.replace(paths.config_path)
+
+    identity_tmp = paths.identity_path.with_suffix(".md.tmp")
+    identity_tmp.write_text(
+        _editable_system_prompt(str(payload["system_prompt"])) + "\n",
+        encoding="utf-8",
+    )
+    identity_tmp.replace(paths.identity_path)
 
     secrets_payload = {
         "openai_api_key": str(payload["openai_api_key"]).strip(),
@@ -574,12 +594,82 @@ def _coerce_config_value(value: object, default_value: object) -> object:
 
 def _editable_system_prompt(system_prompt: str) -> str:
     prompt = system_prompt.strip()
-    if not prompt.startswith("Your name is "):
+    if not prompt or prompt.startswith("#"):
         return prompt
-    sentence_end = prompt.find(".")
-    if sentence_end != -1:
-        return prompt[sentence_end + 1 :].strip()
-    return prompt
+    if not _looks_like_legacy_identity_prompt(prompt):
+        return prompt
+    return _legacy_identity_to_markdown(prompt)
+
+
+def _looks_like_legacy_identity_prompt(prompt: str) -> bool:
+    normalized = " ".join(prompt.split()).lower()
+    required_markers = (
+        "you are a concise",
+        "voice style:",
+        "reply in one short sentence",
+        "reply in the same language",
+    )
+    return all(marker in normalized for marker in required_markers)
+
+
+def _legacy_identity_to_markdown(prompt: str) -> str:
+    sentences = _split_prompt_sentences(prompt)
+    sections: list[tuple[str, list[str]]] = [
+        ("Role", []),
+        ("Tone", []),
+        ("Perception Limits", []),
+        ("Audio Handling", []),
+        ("Response Style", []),
+        ("Tool Use", []),
+        ("Language", []),
+        ("Additional Rules", []),
+    ]
+    section_map = {title: items for title, items in sections}
+
+    for sentence in sentences:
+        lower = sentence.lower()
+        if sentence.startswith("You are "):
+            section_map["Role"].append(sentence)
+        elif sentence.startswith("Voice style:") or sentence.startswith("Speak naturally") or sentence.startswith("Keep it natural"):
+            section_map["Tone"].append(sentence)
+        elif "cannot see" in lower or sentence.startswith("Do not claim to see") or sentence.startswith("Do not say things like"):
+            section_map["Perception Limits"].append(sentence)
+        elif sentence.startswith("If the audio is unclear") or sentence.startswith("Do not guess or invent meaning from unclear audio"):
+            section_map["Audio Handling"].append(sentence)
+        elif sentence.startswith("Use available tools"):
+            section_map["Tool Use"].append(sentence)
+        elif sentence.startswith("Reply in the same language") or sentence.startswith("If the utterance is unclear, use English"):
+            section_map["Language"].append(sentence)
+        elif (
+            sentence.startswith("Reply in one short sentence")
+            or sentence.startswith("Keep spoken answers")
+            or sentence.startswith("Answer the question directly")
+            or sentence.startswith("Prefer a direct answer")
+            or sentence.startswith("If the user is clearly ending")
+            or sentence.startswith("Do not start with filler")
+            or sentence.startswith("Do not add pleasantries")
+            or sentence.startswith("Do not list multiple examples")
+            or sentence.startswith("For translation requests")
+        ):
+            section_map["Response Style"].append(sentence)
+        else:
+            section_map["Additional Rules"].append(sentence)
+
+    lines = ["# Identity"]
+    for title, items in sections:
+        if not items:
+            continue
+        lines.append("")
+        lines.append(f"## {title}")
+        for item in items:
+            lines.append(f"- {item}")
+    return "\n".join(lines).strip()
+
+
+def _split_prompt_sentences(prompt: str) -> list[str]:
+    normalized = re.sub(r"\s+", " ", prompt.strip())
+    parts = re.split(r"(?<=[.!?])\s+", normalized)
+    return [part.strip() for part in parts if part.strip()]
 
 
 def _timezone_options() -> list[str]:

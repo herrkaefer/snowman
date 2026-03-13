@@ -51,6 +51,18 @@ python3 "${REALTIME_DIR}/scripts/migrate_legacy_config.py" --data-dir "${DATA_DI
 if [[ ! -f "${DATA_DIR}/config.json" ]]; then
   cp "${REALTIME_DIR}/config.json" "${DATA_DIR}/config.json"
 fi
+if [[ ! -f "${DATA_DIR}/identity.md" ]]; then
+  python3 - "${DATA_DIR}/identity.md" <<'EOF'
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path.cwd()))
+from snowman_realtime.config import DEFAULT_SYSTEM_PROMPT
+
+identity_path = Path(sys.argv[1])
+identity_path.write_text(DEFAULT_SYSTEM_PROMPT + "\n", encoding="utf-8")
+EOF
+fi
 
 generated_admin_password=""
 if [[ ! -f "${DATA_DIR}/secrets.json" ]]; then

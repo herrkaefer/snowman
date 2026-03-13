@@ -1448,6 +1448,7 @@ def _apply_config(payload: dict[str, object]) -> None:
         data_dir=temp_dir,
         config_path=temp_dir / "config.json",
         secrets_path=temp_dir / "secrets.json",
+        identity_path=temp_dir / "identity.md",
     )
     write_config_files(temp_paths, payload)
     script_path = APP_DIR / "scripts" / "apply_config.sh"
@@ -1458,6 +1459,8 @@ def _apply_config(payload: dict[str, object]) -> None:
             str(temp_paths.config_path),
             "--secrets",
             str(temp_paths.secrets_path),
+            "--identity",
+            str(temp_paths.identity_path),
         ],
         check=False,
         capture_output=True,
