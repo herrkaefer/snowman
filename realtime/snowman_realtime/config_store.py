@@ -16,6 +16,7 @@ DEFAULT_DATA_DIR = APP_DIR.parent / "data"
 CONFIG_FILENAME = "config.json"
 SECRETS_FILENAME = "secrets.json"
 IDENTITY_FILENAME = "identity.md"
+DEFAULT_MEMORY_DIR = "../data/memory"
 SUPPORTED_PROVIDER = "openai"
 LEGACY_BASIC_ENV_TO_CONFIG_KEY = {
     "OPENAI_REALTIME_MODEL": "openai_realtime_model",
@@ -127,7 +128,7 @@ DEFAULT_ADVANCED_CONFIG: dict[str, object] = {
     "realtime_retry_backoff_seconds": 0.75,
     "realtime_retry_backoff_max_seconds": 3.0,
     "memory_enabled": True,
-    "memory_dir": "state/memory",
+    "memory_dir": DEFAULT_MEMORY_DIR,
 }
 
 

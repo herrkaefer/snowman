@@ -80,7 +80,6 @@ class MemoryStoreTests(unittest.TestCase):
             self.assertTrue(store.baseline_exists())
             self.assertEqual(store.read_profile(), original)
 
-
 class MemoryToolTests(unittest.TestCase):
     def test_build_tool_definitions_includes_profile_tools_when_enabled(self) -> None:
         definitions = build_tool_definitions(memory_enabled=True)

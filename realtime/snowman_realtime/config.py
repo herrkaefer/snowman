@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from .config_store import load_config_values
+from .config_store import DEFAULT_MEMORY_DIR, load_config_values
 
 
 BASE_DIR = Path(__file__).resolve().parents[1]
@@ -334,7 +334,7 @@ class Settings:
             realtime_retry_backoff_seconds=_get_float(advanced, "realtime_retry_backoff_seconds", 0.75),
             realtime_retry_backoff_max_seconds=_get_float(advanced, "realtime_retry_backoff_max_seconds", 3.0),
             memory_enabled=_get_bool(advanced, "memory_enabled", False),
-            memory_dir=str(_resolve_path(_get_str(advanced, "memory_dir", "state/memory"))),
+            memory_dir=str(_resolve_path(_get_str(advanced, "memory_dir", DEFAULT_MEMORY_DIR))),
         )
 
     @property

@@ -20,6 +20,7 @@ from .audio import (
 )
 from .config import DEFAULT_SYSTEM_PROMPT
 from .config_store import (
+    DEFAULT_MEMORY_DIR,
     ConfigPaths,
     config_values_for_api,
     load_config_values,
@@ -1353,10 +1354,11 @@ def _tool_payload_for_api(config_payload: dict[str, object]) -> list[dict[str, s
 
 def _memory_store_for_config(config_payload: dict[str, object]) -> MemoryStore:
     advanced = config_payload.get("advanced", {})
-    raw_dir = "state/memory"
+    raw_dir = DEFAULT_MEMORY_DIR
     if isinstance(advanced, dict):
         raw_dir = str(advanced.get("memory_dir", raw_dir)).strip() or raw_dir
-    return MemoryStore(APP_DIR / raw_dir if not Path(raw_dir).is_absolute() else Path(raw_dir))
+    base_dir = APP_DIR / raw_dir if not Path(raw_dir).is_absolute() else Path(raw_dir)
+    return MemoryStore.from_path(str(base_dir))
 
 
 def _memory_payload_for_api(config_payload: dict[str, object]) -> dict[str, object]:
