@@ -2,6 +2,29 @@
 
 OpenAI Realtime API based voice assistant for Raspberry Pi.
 
+## Current Layout
+
+The current self-hosted install layout is:
+
+- app code: `~/snowman-realtime/realtime`
+- persistent config and secrets: `~/snowman-realtime/data/config.json`, `~/snowman-realtime/data/secrets.json`
+- editable agent identity prompt: `~/snowman-realtime/data/identity.md`
+- persistent memory files: `~/snowman-realtime/data/memory/`
+
+Current memory files:
+
+- `profile.md`: editable long-lived profile memory
+- `MEMORY.md`: generated memory index injected into the runtime prompt
+- `profile.baseline.md`: manual restore point for profile recovery
+
+## Recent Updates
+
+- Prompt storage moved out of `config.json` and into `data/identity.md`.
+- Memory storage moved out of `realtime/state/memory` and into `data/memory`.
+- The Raspberry Pi install directory is now `~/snowman-realtime` instead of `~/voice-assistant-realtime`.
+- The `Tools` tab now supports tool-specific configuration.
+- `web_search` is the first configurable tool and now stores its model under `tool_config.web_search.model` in `data/config.json`.
+
 ## Goals
 
 - Keep the custom pipeline app untouched in `../pipeline/`
@@ -92,7 +115,7 @@ http://<pi-ip>:3010
 
 6. Use the Advanced tab if you need to tune audio devices, turn timing, retries, or health checks.
 
-All runtime settings now come from `data/config.json` and `data/secrets.json`. The old `.env` workflow is no longer used.
+All runtime settings now come from `data/config.json`, `data/secrets.json`, `data/identity.md`, and `data/memory/`. The old `.env` workflow is no longer used.
 
 ## Run
 
@@ -187,7 +210,7 @@ python scripts/probe_realtime_connect.py --attempts 20 --with-audio --audio-ms 2
 - A post-reply cue can be configured with the Advanced tab key `post_reply_cue_path`; by default it reuses `audio/ready_cue.wav`.
 - A failure cue can be configured with the Advanced tab key `failure_cue_path`; by default it uses `audio/wake_chime.wav`.
 - The default playback device is auto-detected and prefers `Google voiceHAT`.
-- The default prompt lives in `snowman_realtime/config.py`, and the UI writes prompt overrides into `data/config.json`.
+- The default prompt lives in `snowman_realtime/config.py`, and the UI writes the active prompt into `data/identity.md`.
 - The assistant name is configured separately with `agent_name`; runtime instructions prepend `Your name is {agent_name}.` automatically.
 - The default mode uses manual turn submission to Realtime instead of continuous server VAD.
 - The product interaction model is currently half-duplex rather than true barge-in during reply playback.
@@ -195,7 +218,8 @@ python scripts/probe_realtime_connect.py --attempts 20 --with-audio --audio-ms 2
 - Optional local input cleanup can be enabled with `input_ns_enabled` and `input_agc_enabled`.
 - The current `NS/AGC` path is lightweight local preprocessing designed to be safe on Raspberry Pi and easy to disable if it hurts recognition.
 - Direct Realtime tools currently include `web_search` for current information and `local_time` for exact current local time.
-- `web_search` uses `web_search_model`, which now defaults to `gpt-5.2`.
+- Tool-specific settings now live under `tool_config` in `data/config.json`.
+- `web_search` uses `tool_config.web_search.model`, which currently defaults to `gpt-5.2`.
 - Realtime connection/setup uses configurable timeouts and retry backoff.
 
 ## Service
