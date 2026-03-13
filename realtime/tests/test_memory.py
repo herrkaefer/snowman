@@ -88,6 +88,9 @@ class MemoryToolTests(unittest.TestCase):
         self.assertIn("profile_memory_update", names)
         profile_get = next(definition for definition in definitions if definition.name == "profile_memory_get")
         self.assertIn("before asking a clarification question", profile_get.description)
+        web_search = next(definition for definition in definitions if definition.name == "web_search")
+        self.assertIn("external proper nouns", web_search.description)
+        self.assertIn("profile_memory_get", web_search.description)
 
     def test_tool_registry_profile_get_and_update(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

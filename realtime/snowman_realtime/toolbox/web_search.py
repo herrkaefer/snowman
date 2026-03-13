@@ -140,8 +140,9 @@ TOOL = ToolSpec(
     definition=ToolDefinition(
         name="web_search",
         description=(
-            "Search the web for current or changing information. "
-            "Required for recent facts and time-sensitive questions such as current officeholders, news, weather, prices, laws, schedules, standings, or anything asked as current, latest, today, now, or recent."
+            "Search the web for current or changing information, and for external named entities or explainer questions. "
+            "Required for recent facts and time-sensitive questions such as current officeholders, news, weather, prices, laws, schedules, standings, or anything asked as current, latest, today, now, or recent. "
+            "Also use this for external proper nouns, public people, organizations, brands, products, places, artworks, concepts, and prompts like who is X, what is X, tell me about X, explain X, etc. "
         ),
         parameters={
             "type": "object",
