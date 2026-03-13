@@ -123,7 +123,7 @@ class LocationContextTests(unittest.TestCase):
             captured["body"] = json.loads(req.data.decode("utf-8"))
             return _DummyHTTPResponse({"output_text": "ok", "output": []})
 
-        with patch("realtime.snowman_realtime.tool_modules.web_search.request.urlopen", fake_urlopen):
+        with patch("realtime.snowman_realtime.toolbox.web_search.request.urlopen", fake_urlopen):
             result = json.loads(registry.execute("web_search", '{"query":"weather"}'))
 
         self.assertEqual(result["summary"], "ok")
@@ -154,7 +154,7 @@ class LocationContextTests(unittest.TestCase):
             captured["body"] = json.loads(req.data.decode("utf-8"))
             return _DummyHTTPResponse({"output_text": "ok", "output": []})
 
-        with patch("realtime.snowman_realtime.tool_modules.web_search.request.urlopen", fake_urlopen):
+        with patch("realtime.snowman_realtime.toolbox.web_search.request.urlopen", fake_urlopen):
             registry.execute("web_search", '{"query":"weather"}')
 
         self.assertEqual(captured["body"]["tools"], [{"type": "web_search"}])

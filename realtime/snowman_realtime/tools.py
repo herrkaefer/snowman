@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Any, Callable
 
-from . import tool_modules
+from . import toolbox
 from .memory import MemoryStore
 
 
@@ -49,10 +49,10 @@ class ToolSpec:
 @lru_cache(maxsize=1)
 def discover_tool_specs() -> tuple[ToolSpec, ...]:
     discovered: dict[str, ToolSpec] = {}
-    for module_info in pkgutil.iter_modules(tool_modules.__path__):
+    for module_info in pkgutil.iter_modules(toolbox.__path__):
         if module_info.ispkg or module_info.name.startswith("_"):
             continue
-        module = importlib.import_module(f"{tool_modules.__name__}.{module_info.name}")
+        module = importlib.import_module(f"{toolbox.__name__}.{module_info.name}")
         spec = getattr(module, "TOOL", None)
         if not isinstance(spec, ToolSpec):
             raise RuntimeError(f"Tool module {module.__name__} must define TOOL as ToolSpec")
