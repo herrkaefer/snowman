@@ -155,6 +155,8 @@ class RecentConversationCompactTests(unittest.TestCase):
             self.assertEqual(req.full_url, "https://api.openai.com/v1/chat/completions")
             body = json.loads(req.data.decode("utf-8"))
             self.assertEqual(body["response_format"], {"type": "json_object"})
+            self.assertIn("summary must be written in the same language indicated by language", body["messages"][0]["content"])
+            self.assertIn("topics must be an array of short English topic labels", body["messages"][0]["content"])
             return _FakeResponse()
 
         with patch("realtime.snowman_realtime.recent_conversation.request.urlopen", fake_urlopen):

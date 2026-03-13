@@ -90,7 +90,6 @@ class MemoryToolTests(unittest.TestCase):
         self.assertIn("before asking a clarification question", profile_get.description)
         web_search = next(definition for definition in definitions if definition.name == "web_search")
         self.assertIn("external proper nouns", web_search.description)
-        self.assertIn("profile_memory_get", web_search.description)
 
     def test_tool_registry_profile_get_and_update(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -183,6 +182,8 @@ class MemoryPromptTests(unittest.TestCase):
 
         self.assertIn("# Memory Index", instructions)
         self.assertIn("profile_memory_get", instructions)
+        self.assertIn("who is X, what is X, tell me about X", instructions)
+        self.assertIn("ask one brief clarification question", instructions)
 
 
 class MemoryConfigUITests(unittest.TestCase):
@@ -220,6 +221,7 @@ class MemoryConfigUITests(unittest.TestCase):
             self.assertIn("# Profile Memory", payload["profile_markdown"])
             self.assertIn("# Memory Index", payload["memory_index_markdown"])
             self.assertIn("- description:", payload["memory_index_markdown"])
+            self.assertIn("ask one brief clarification question", payload["memory_index_markdown"])
             self.assertFalse(payload["baseline_exists"])
 
     def test_memory_baseline_api_helpers(self) -> None:

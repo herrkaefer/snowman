@@ -60,6 +60,7 @@ def render_memory_index_markdown() -> str:
         "- Use `profile_memory_get` when you need stable facts about the user, family, preferences, or household.\n"
         "- If the user asks who a named person is, what their relationship is, or mentions someone as being in the family or household, prefer `profile_memory_get` before asking a clarification question.\n"
         "- For household names such as family members, do not assume the user means a public figure when profile memory is a plausible source.\n"
+        "- For short names, uncommon names, or names that may have been transcribed imperfectly from speech, ask one brief clarification question before using `web_search`.\n"
         "- Before any `profile_memory_update`, you must call `profile_memory_get` in the current session.\n"
         "- When updating profile memory, preserve unrelated existing facts and make only the minimal necessary edit.\n"
         "- `recent_conversation` is stored automatically after completed sessions and is intended for later recall tools, not direct prompt injection.\n"

@@ -92,9 +92,11 @@ def compact_recent_conversation(
         "summary must be a short factual summary of what was discussed. "
         "Do not invent facts. Do not convert conversation content into profile-memory updates. "
         "Do not extract schedules or reminders beyond what was directly discussed. "
-        "language must be the main language used by the user if clear, otherwise an empty string. "
+        "language must identify the main language used by the user if clear, otherwise an empty string. "
+        "summary must be written in the same language indicated by language. "
+        "If the conversation mixes languages, choose the user's dominant language for both language and summary. "
         "entities must be an array of short entity names mentioned in the session. "
-        "topics must be an array of short topic labels."
+        "topics must be an array of short English topic labels."
     )
     session_payload = {
         "session_id": snapshot.session_id,

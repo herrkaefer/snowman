@@ -52,10 +52,13 @@ DEFAULT_SYSTEM_PROMPT = """# Identity
 - Reply in the same language as the clearly understood user utterance.
 - If the utterance is unclear, use English.
 """.strip()
-LATEST_INFO_POLICY = (
+WEB_SEARCH_POLICY = (
     "For any question that could plausibly depend on current or changing information, you must call web_search before answering and must not answer from memory. "
     "This includes politics and officeholders, current leaders, recent events, news, weather, prices, exchange rates, laws, regulations, product availability, schedules, sports results, and anything phrased as current, latest, today, now, or recent. "
-    "If web_search fails or is unavailable, briefly say that you cannot verify the latest information right now."
+    "Also use web_search for external named entities or explainer questions such as who is X, what is X, tell me about X, 介绍一下X, 什么是X, and short questions about named people, organizations, brands, products, places, artworks, books, historical figures, or concepts. "
+    "If the name may plausibly refer to someone in household profile memory, check profile_memory_get first instead of web_search. "
+    "For short names, uncommon names, or names that may have been transcribed imperfectly from speech, ask one brief clarification question instead of immediately calling web_search. "
+    "If web_search fails or is unavailable, briefly say that you cannot verify the information right now."
 )
 
 
@@ -86,7 +89,7 @@ def build_session_instructions(
     instruction_parts = [_build_agent_identity_prompt(agent_name), system_prompt, current_time_context]
     if location_context and location_context.strip():
         instruction_parts.append(location_context.strip())
-    instruction_parts.append(LATEST_INFO_POLICY)
+    instruction_parts.append(WEB_SEARCH_POLICY)
     if memory_index_context and memory_index_context.strip():
         instruction_parts.append(memory_index_context.strip())
     return "\n\n".join(part for part in instruction_parts if part).strip()
