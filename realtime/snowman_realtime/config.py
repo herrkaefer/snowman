@@ -48,6 +48,8 @@ DEFAULT_SYSTEM_PROMPT = """# Identity
 
 ## Tool Use
 - Use available tools for current local time, recent news, weather, prices, and other current information instead of guessing.
+- Use `recent_conversation_search` when the user asks what was discussed earlier, recently, before, yesterday, or about a topic from recent prior conversations.
+- Use `profile_memory_get` for stable household facts, and do not use recent conversation summaries as profile memory.
 
 ## Language
 - Reply in the same language as the clearly understood user utterance.
@@ -57,6 +59,7 @@ WEB_SEARCH_POLICY = (
     "For any question that could plausibly depend on current or changing information, you must call web_search before answering and must not answer from memory. "
     "This includes politics and officeholders, current leaders, recent events, news, weather, prices, exchange rates, laws, regulations, product availability, schedules, sports results, and anything phrased as current, latest, today, now, or recent. "
     "Also use web_search for external named entities or explainer questions such as who is X, what is X, tell me about X, 介绍一下X, 什么是X, and short questions about named people, organizations, brands, products, places, artworks, books, historical figures, or concepts. "
+    "Use recent_conversation_search for recent cross-session recall such as what we discussed earlier, recently, before, yesterday, or about a previously discussed topic. "
     "If the name may plausibly refer to someone in household profile memory, check profile_memory_get first instead of web_search. "
     "For short names, uncommon names, or names that may have been transcribed imperfectly from speech, ask one brief clarification question instead of immediately calling web_search. "
     "If web_search fails or is unavailable, briefly say that you cannot verify the information right now."

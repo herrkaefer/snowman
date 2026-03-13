@@ -415,6 +415,71 @@ HTML_PAGE = """<!doctype html>
       display: grid;
       gap: 10px;
     }
+    .conversation-list {
+      display: grid;
+      gap: 12px;
+    }
+    .conversation-item {
+      padding: 14px;
+      border: 3px solid var(--line);
+      background: rgba(255, 255, 255, 0.72);
+    }
+    .conversation-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+    .conversation-summary {
+      margin: 0;
+      font-size: 1.26rem;
+      font-weight: 700;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      color: var(--line);
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+    .conversation-meta {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.84rem;
+      line-height: 1.2;
+    }
+    .conversation-meta:last-child {
+      margin-bottom: 0;
+    }
+    .conversation-meta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      margin: 0 0 4px;
+    }
+    .conversation-meta-row:last-child {
+      margin-bottom: 0;
+    }
+    .conversation-meta-item {
+      min-width: 0;
+    }
+    .conversation-label {
+      color: var(--ink);
+      font-weight: 700;
+    }
+    .conversation-delete {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 34px;
+      height: 34px;
+      padding: 0;
+      font-size: 1.2rem;
+      line-height: 1;
+      flex: 0 0 34px;
+      background: var(--warn-soft);
+      color: var(--warn);
+      box-shadow: 3px 3px 0 rgba(22, 48, 76, 0.12);
+    }
     .tool-field {
       display: grid;
       gap: 6px;
@@ -460,6 +525,7 @@ HTML_PAGE = """<!doctype html>
       <button id="tab_audio" class="tab" type="button">Audio</button>
       <button id="tab_tools" class="tab" type="button">Tools</button>
       <button id="tab_memory" class="tab" type="button">Memory</button>
+      <button id="tab_conversation" class="tab" type="button">Conversation</button>
       <button id="tab_advanced" class="tab" type="button">Advanced</button>
     </div>
 
@@ -629,6 +695,15 @@ HTML_PAGE = """<!doctype html>
           <select id="recent_conversation_compact_model"></select>
           <div class="hint">Which model to use for end-of-session recent conversation summaries.</div>
         </div>
+      </section>
+    </div>
+
+    <div id="panel_conversation" class="grid hidden">
+      <section class="card">
+        <h2>Recent Conversations</h2>
+        <p>Shows the stored contents of <code>recent_sessions.jsonl</code>, newest sessions first.</p>
+        <div id="conversation_status" class="hint"></div>
+        <div id="conversation_list" class="conversation-list"></div>
       </section>
     </div>
 
@@ -818,8 +893,64 @@ HTML_PAGE = """<!doctype html>
       $("memory_status").textContent = memory.memory_enabled
         ? `Memory is enabled. Storage: ${memory.memory_dir}. Baseline: ${memory.baseline_exists ? "saved" : "not saved"}.`
         : `Memory is disabled in runtime config. You can still inspect and edit files here. Storage: ${memory.memory_dir}. Baseline: ${memory.baseline_exists ? "saved" : "not saved"}.`;
+      renderRecentSessions(memory.recent_sessions || [], memory.recent_sessions_path || "");
       autoGrowProfile();
       autoGrowMemoryIndex();
+    }
+
+    function renderRecentSessions(records, path) {
+      const items = Array.isArray(records) ? records : [];
+      $("conversation_status").textContent = path
+        ? `Source: ${path}. Entries: ${items.length}.`
+        : `Entries: ${items.length}.`;
+      if (!items.length) {
+        $("conversation_list").innerHTML = `<div class="conversation-item"><p class="conversation-summary">No recent conversation records yet.</p></div>`;
+        return;
+      }
+      $("conversation_list").innerHTML = items
+        .map((record) => {
+          const endedAt = record.ended_at || "Unknown end time";
+          const startedAt = record.started_at || "Unknown start time";
+          const sessionId = record.session_id || "unknown";
+          const language = record.language ? escapeHtml(record.language) : "n/a";
+          const entities = Array.isArray(record.entities) && record.entities.length
+            ? record.entities.map((value) => escapeHtml(value)).join(", ")
+            : "none";
+          const topics = Array.isArray(record.topics) && record.topics.length
+            ? record.topics.map((value) => escapeHtml(value)).join(", ")
+            : "none";
+          const source = record.source ? escapeHtml(record.source) : "unknown";
+          const summary = escapeHtml(record.summary || "No summary.");
+          return `
+            <div class="conversation-item">
+              <div class="conversation-head">
+                <p class="conversation-summary">${summary}</p>
+                <button class="secondary conversation-delete" type="button" aria-label="Delete conversation" title="Delete conversation" data-delete-session-id="${escapeHtml(sessionId)}">&times;</button>
+              </div>
+              <div class="conversation-meta-row">
+                <div class="conversation-meta conversation-meta-item"><span class="conversation-label">Session ID:</span> ${escapeHtml(sessionId)}</div>
+                <div class="conversation-meta conversation-meta-item"><span class="conversation-label">Source:</span> ${source}</div>
+              </div>
+              <div class="conversation-meta-row">
+                <div class="conversation-meta conversation-meta-item"><span class="conversation-label">Started:</span> ${escapeHtml(startedAt)}</div>
+                <div class="conversation-meta conversation-meta-item"><span class="conversation-label">Ended:</span> ${escapeHtml(endedAt)}</div>
+              </div>
+              <div class="conversation-meta-row">
+                <div class="conversation-meta conversation-meta-item"><span class="conversation-label">Language:</span> ${language}</div>
+                <div class="conversation-meta conversation-meta-item"><span class="conversation-label">Entities:</span> ${entities}</div>
+                <div class="conversation-meta conversation-meta-item"><span class="conversation-label">Topics:</span> ${topics}</div>
+              </div>
+            </div>
+          `;
+        })
+        .join("");
+    }
+
+    function setConversationDeleteButtonsDisabled(disabled) {
+      const buttons = document.querySelectorAll("[data-delete-session-id]");
+      for (const button of buttons) {
+        button.disabled = disabled;
+      }
     }
 
     function setMemoryFeedback(text, kind = "") {
@@ -951,6 +1082,7 @@ HTML_PAGE = """<!doctype html>
         $("save_profile_baseline").disabled = true;
         $("restore_profile_baseline").disabled = true;
         $("save_memory_index").disabled = true;
+        setConversationDeleteButtonsDisabled(true);
         const memoryResult = await readJson("/api/memory/profile", {
           method: "POST",
           body: JSON.stringify({
@@ -986,6 +1118,7 @@ HTML_PAGE = """<!doctype html>
         $("save_profile_baseline").disabled = false;
         $("restore_profile_baseline").disabled = false;
         $("save_memory_index").disabled = false;
+        setConversationDeleteButtonsDisabled(false);
       }
     }
 
@@ -1130,6 +1263,30 @@ HTML_PAGE = """<!doctype html>
       }
     }
 
+    async function deleteRecentSession(sessionId) {
+      if (!sessionId) {
+        return;
+      }
+      if (!window.confirm(`Delete recent conversation record ${sessionId}?`)) {
+        return;
+      }
+      try {
+        setConversationDeleteButtonsDisabled(true);
+        const result = await readJson("/api/memory/recent-session/delete", {
+          method: "POST",
+          body: JSON.stringify({
+            session_id: sessionId
+          })
+        });
+        populateMemory(result);
+        setMessage("Recent conversation deleted.", "good");
+      } catch (error) {
+        setMessage(error.message, "warn");
+      } finally {
+        setConversationDeleteButtonsDisabled(false);
+      }
+    }
+
     function autoGrowPrompt() {
       const textarea = $("system_prompt");
       textarea.style.height = "auto";
@@ -1155,7 +1312,7 @@ HTML_PAGE = """<!doctype html>
     }
 
     function showTab(name) {
-      const panels = ["identity", "ai", "audio", "tools", "memory", "advanced"];
+      const panels = ["identity", "ai", "audio", "tools", "memory", "conversation", "advanced"];
       for (const panel of panels) {
         const active = panel === name;
         $("panel_" + panel).classList.toggle("hidden", !active);
@@ -1185,10 +1342,18 @@ HTML_PAGE = """<!doctype html>
     $("tab_advanced").addEventListener("click", () => showTab("advanced"));
     $("tab_tools").addEventListener("click", () => showTab("tools"));
     $("tab_memory").addEventListener("click", () => showTab("memory"));
+    $("tab_conversation").addEventListener("click", () => showTab("conversation"));
     $("save_profile_memory").addEventListener("click", saveProfileMemory);
     $("save_profile_baseline").addEventListener("click", saveProfileBaseline);
     $("restore_profile_baseline").addEventListener("click", restoreProfileBaseline);
     $("save_memory_index").addEventListener("click", saveMemoryIndex);
+    $("conversation_list").addEventListener("click", (event) => {
+      const button = event.target.closest("[data-delete-session-id]");
+      if (!button) {
+        return;
+      }
+      deleteRecentSession(button.getAttribute("data-delete-session-id") || "");
+    });
     refresh().catch((error) => {
       setMessage(error.message, "warn");
     });
@@ -1286,6 +1451,14 @@ class ConfigUIHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/memory/profile/baseline/restore":
             try:
                 result = _restore_profile_baseline(_load_config())
+            except RuntimeError as exc:
+                self._write_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
+            self._write_json(result)
+            return
+        if parsed.path == "/api/memory/recent-session/delete":
+            try:
+                result = _delete_recent_session(_load_config(), body)
             except RuntimeError as exc:
                 self._write_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
                 return
@@ -1463,9 +1636,18 @@ def _memory_payload_for_api(config_payload: dict[str, object]) -> dict[str, obje
         "profile_path": str(store.paths.profile_path),
         "memory_index_path": str(store.paths.index_path),
         "baseline_path": str(store.paths.baseline_path),
+        "recent_sessions_path": str(store.paths.recent_sessions_path),
         "baseline_exists": store.baseline_exists(),
         "profile_markdown": store.read_profile(),
         "memory_index_markdown": store.read_memory_index(),
+        "recent_sessions": sorted(
+            store.read_recent_sessions(),
+            key=lambda record: (
+                str(record.get("ended_at", "") or ""),
+                str(record.get("started_at", "") or ""),
+            ),
+            reverse=True,
+        ),
         "recent_conversation_compact_model": compact_model,
         "recent_conversation_compact_model_options": list(COMPACT_MODEL_OPTIONS),
     }
@@ -1495,6 +1677,20 @@ def _save_profile_baseline(config_payload: dict[str, object]) -> dict[str, objec
 def _restore_profile_baseline(config_payload: dict[str, object]) -> dict[str, object]:
     store = _memory_store_for_config(config_payload)
     store.restore_baseline()
+    return _memory_payload_for_api(config_payload)
+
+
+def _delete_recent_session(
+    config_payload: dict[str, object],
+    body: dict[str, object],
+) -> dict[str, object]:
+    session_id = str(body.get("session_id", "")).strip()
+    if not session_id:
+        raise RuntimeError("session_id is required.")
+    store = _memory_store_for_config(config_payload)
+    deleted = store.delete_recent_session(session_id)
+    if not deleted:
+        raise RuntimeError(f"Recent conversation not found: {session_id}")
     return _memory_payload_for_api(config_payload)
 
 

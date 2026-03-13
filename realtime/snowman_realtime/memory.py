@@ -46,7 +46,7 @@ def render_memory_index_markdown() -> str:
         "- avoid_when: recent chat recall, reminders, dated events\n\n"
         "## recent_conversation\n"
         "- description: Automatically stored compact summaries of completed recent sessions for later conversational recall.\n"
-        "- retrieval_tools: future recent_conversation_search\n"
+        "- retrieval_tools: recent_conversation_search\n"
         "- edit_tools: system-managed only\n"
         "- use_when: what we discussed earlier, recent context recall across sessions\n"
         "- avoid_when: stable fact lookup, authoritative household facts\n\n"
@@ -58,6 +58,7 @@ def render_memory_index_markdown() -> str:
         "- avoid_when: stable fact lookup\n\n"
         "## routing_rules\n"
         "- Use `profile_memory_get` when you need stable facts about the user, family, preferences, or household.\n"
+        "- Use `recent_conversation_search` when the user asks what was discussed earlier, recently, before, yesterday, or about a topic previously discussed across recent sessions.\n"
         "- If the user asks who a named person is, what their relationship is, or mentions someone as being in the family or household, prefer `profile_memory_get` before asking a clarification question.\n"
         "- For household names such as family members, do not assume the user means a public figure when profile memory is a plausible source.\n"
         "- For short names, uncommon names, or names that may have been transcribed imperfectly from speech, ask one brief clarification question before using `web_search`.\n"
@@ -171,6 +172,30 @@ class MemoryStore:
                     raise RuntimeError("Recent session record must serialize to a single JSONL line.")
                 handle.write(line + "\n")
             handle.flush()
+
+    def delete_recent_session(self, session_id: str) -> bool:
+        self.ensure_initialized()
+        normalized_session_id = session_id.strip()
+        if not normalized_session_id:
+            raise RuntimeError("session_id is required")
+
+        records = self.read_recent_sessions()
+        filtered_records = [
+            record
+            for record in records
+            if str(record.get("session_id", "")).strip() != normalized_session_id
+        ]
+        if len(filtered_records) == len(records):
+            return False
+
+        with self._paths.recent_sessions_path.open("w", encoding="utf-8") as handle:
+            for item in filtered_records:
+                line = json.dumps(item, ensure_ascii=False)
+                if "\n" in line or "\r" in line:
+                    raise RuntimeError("Recent session record must serialize to a single JSONL line.")
+                handle.write(line + "\n")
+            handle.flush()
+        return True
 
     def _write_text(self, path: Path, content: str) -> None:
         normalized = content.replace("\r\n", "\n").strip() + "\n"

@@ -5,9 +5,11 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from realtime.snowman_realtime.config import build_session_instructions
 from realtime.snowman_realtime.config_ui import (
+    _delete_recent_session,
     _memory_payload_for_api,
     _restore_profile_baseline,
     _save_profile_baseline,
@@ -18,6 +20,10 @@ from realtime.snowman_realtime.memory import (
     MemoryValidationError,
     default_profile_markdown,
     render_memory_index_markdown,
+)
+from realtime.snowman_realtime.toolbox.recent_conversation_search import (
+    DEFAULT_RECENT_SESSION_RETRIEVAL_LIMIT,
+    search_recent_sessions,
 )
 from realtime.snowman_realtime.tools import ToolRegistry, build_tool_definitions
 
@@ -80,16 +86,124 @@ class MemoryStoreTests(unittest.TestCase):
             self.assertTrue(store.baseline_exists())
             self.assertEqual(store.read_profile(), original)
 
+    def test_memory_store_can_delete_single_recent_session(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = MemoryStore(Path(temp_dir))
+            store.append_recent_session(
+                {
+                    "session_id": "sess_keep",
+                    "started_at": "2026-03-12T09:00:00Z",
+                    "ended_at": "2026-03-12T09:05:00Z",
+                    "summary": "Keep this session.",
+                }
+            )
+            store.append_recent_session(
+                {
+                    "session_id": "sess_delete",
+                    "started_at": "2026-03-13T09:00:00Z",
+                    "ended_at": "2026-03-13T09:05:00Z",
+                    "summary": "Delete this session.",
+                }
+            )
+
+            deleted = store.delete_recent_session("sess_delete")
+
+            self.assertTrue(deleted)
+            self.assertEqual(
+                [record["session_id"] for record in store.read_recent_sessions()],
+                ["sess_keep"],
+            )
+
+    def test_recent_conversation_search_returns_newest_first_with_default_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = MemoryStore(Path(temp_dir))
+            for index in range(DEFAULT_RECENT_SESSION_RETRIEVAL_LIMIT + 2):
+                store.append_recent_session(
+                    {
+                        "session_id": f"sess_{index}",
+                        "started_at": f"2026-03-{index + 1:02d}T09:00:00Z",
+                        "ended_at": f"2026-03-{index + 1:02d}T09:05:00Z",
+                        "summary": f"Summary {index}",
+                    }
+                )
+
+            matches = search_recent_sessions(store.read_recent_sessions())
+
+            self.assertEqual(len(matches), DEFAULT_RECENT_SESSION_RETRIEVAL_LIMIT)
+            self.assertEqual(
+                [record["session_id"] for record in matches],
+                ["sess_6", "sess_5", "sess_4", "sess_3", "sess_2"],
+            )
+
+    def test_recent_conversation_search_filters_by_query_and_time(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = MemoryStore(Path(temp_dir))
+            store.append_recent_session(
+                {
+                    "session_id": "sess_old",
+                    "started_at": "2026-03-10T09:00:00Z",
+                    "ended_at": "2026-03-10T09:05:00Z",
+                    "summary": "Talked about Monet.",
+                    "entities": ["Monet"],
+                    "topics": ["art"],
+                }
+            )
+            store.append_recent_session(
+                {
+                    "session_id": "sess_match",
+                    "started_at": "2026-03-12T09:00:00Z",
+                    "ended_at": "2026-03-12T09:05:00Z",
+                    "summary": "Talked about Van Gogh and paintings.",
+                    "entities": ["Van Gogh"],
+                    "topics": ["art"],
+                }
+            )
+            store.append_recent_session(
+                {
+                    "session_id": "sess_other",
+                    "started_at": "2026-03-13T09:00:00Z",
+                    "ended_at": "2026-03-13T09:05:00Z",
+                    "summary": "Talked about weather in Chicago.",
+                    "entities": ["Chicago"],
+                    "topics": ["weather"],
+                }
+            )
+
+            matches = search_recent_sessions(
+                store.read_recent_sessions(),
+                query="van gogh",
+                start_time="2026-03-11T00:00:00Z",
+                end_time="2026-03-13T00:00:00Z",
+                limit=5,
+            )
+
+            self.assertEqual([record["session_id"] for record in matches], ["sess_match"])
+
+    def test_recent_conversation_search_rejects_invalid_timestamps(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with self.assertRaisesRegex(RuntimeError, "start_time must be an ISO-8601 timestamp"):
+                search_recent_sessions([], start_time="yesterday")
+
+            with self.assertRaisesRegex(RuntimeError, "start_time must be earlier than or equal to end_time"):
+                search_recent_sessions(
+                    [],
+                    start_time="2026-03-13T00:00:00Z",
+                    end_time="2026-03-12T00:00:00Z",
+                )
+
 class MemoryToolTests(unittest.TestCase):
     def test_build_tool_definitions_includes_profile_tools_when_enabled(self) -> None:
         definitions = build_tool_definitions(memory_enabled=True)
         names = [definition.name for definition in definitions]
         self.assertIn("profile_memory_get", names)
         self.assertIn("profile_memory_update", names)
+        self.assertIn("recent_conversation_search", names)
         profile_get = next(definition for definition in definitions if definition.name == "profile_memory_get")
         self.assertIn("before asking a clarification question", profile_get.description)
         web_search = next(definition for definition in definitions if definition.name == "web_search")
         self.assertIn("external proper nouns", web_search.description)
+        recent_search = next(definition for definition in definitions if definition.name == "recent_conversation_search")
+        self.assertIn("what was discussed earlier", recent_search.description)
 
     def test_tool_registry_profile_get_and_update(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -127,6 +241,112 @@ class MemoryToolTests(unittest.TestCase):
 
             self.assertEqual(result["status"], "updated")
             self.assertEqual(result["profile_markdown"], updated.strip() + "\n")
+
+    def test_tool_registry_recent_conversation_search(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            settings = SimpleNamespace(
+                memory_enabled=True,
+                memory_dir=temp_dir,
+                tool_config={"web_search": {"model": "gpt-5.2"}},
+                openai_api_key="unused",
+                location_city="",
+                location_region="",
+                location_country_code="",
+                location_timezone="",
+            )
+            store = MemoryStore(Path(temp_dir))
+            store.append_recent_session(
+                {
+                    "session_id": "sess_1",
+                    "started_at": "2026-03-12T09:00:00Z",
+                    "ended_at": "2026-03-12T09:05:00Z",
+                    "summary": "Talked about Monet.",
+                    "entities": ["Monet"],
+                    "topics": ["art"],
+                }
+            )
+            store.append_recent_session(
+                {
+                    "session_id": "sess_2",
+                    "started_at": "2026-03-13T09:00:00Z",
+                    "ended_at": "2026-03-13T09:05:00Z",
+                    "summary": "Talked about the weather.",
+                    "entities": ["Chicago"],
+                    "topics": ["weather"],
+                }
+            )
+
+            registry = ToolRegistry(settings)
+            result = json.loads(
+                registry.execute(
+                    "recent_conversation_search",
+                    json.dumps({"query": "Monet", "limit": 5}),
+                )
+            )
+
+            self.assertEqual(result["count"], 1)
+            self.assertEqual(result["sessions"][0]["session_id"], "sess_1")
+
+    def test_tool_registry_recent_conversation_search_logs_input_and_output(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            settings = SimpleNamespace(
+                memory_enabled=True,
+                memory_dir=temp_dir,
+                tool_config={"web_search": {"model": "gpt-5.2"}},
+                openai_api_key="unused",
+                location_city="",
+                location_region="",
+                location_country_code="",
+                location_timezone="",
+            )
+            store = MemoryStore(Path(temp_dir))
+            store.append_recent_session(
+                {
+                    "session_id": "sess_1",
+                    "started_at": "2026-03-12T09:00:00Z",
+                    "ended_at": "2026-03-12T09:05:00Z",
+                    "summary": "Talked about Monet and paintings.",
+                    "entities": ["Monet"],
+                    "topics": ["art"],
+                }
+            )
+
+            registry = ToolRegistry(settings)
+            with patch("realtime.snowman_realtime.toolbox.recent_conversation_search.LOGGER.info") as log_info:
+                registry.execute(
+                    "recent_conversation_search",
+                    json.dumps(
+                        {
+                            "query": "Monet",
+                            "start_time": "2026-03-12T00:00:00Z",
+                            "end_time": "2026-03-13T00:00:00Z",
+                            "limit": 5,
+                        }
+                    ),
+                )
+
+            self.assertEqual(log_info.call_count, 2)
+            self.assertIn("recent_conversation_search input", log_info.call_args_list[0].args[0])
+            self.assertIn("recent_conversation_search output", log_info.call_args_list[1].args[0])
+            self.assertEqual(log_info.call_args_list[0].args[1:], ("Monet", "2026-03-12T00:00:00Z", "2026-03-13T00:00:00Z", 5))
+            self.assertEqual(log_info.call_args_list[1].args[1], 1)
+            self.assertEqual(log_info.call_args_list[1].args[2], ["sess_1"])
+
+    def test_tool_registry_recent_conversation_search_rejects_invalid_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            settings = SimpleNamespace(
+                memory_enabled=True,
+                memory_dir=temp_dir,
+                tool_config={"web_search": {"model": "gpt-5.2"}},
+                openai_api_key="unused",
+                location_city="",
+                location_region="",
+                location_country_code="",
+                location_timezone="",
+            )
+            registry = ToolRegistry(settings)
+            with self.assertRaisesRegex(RuntimeError, "limit must be an integer"):
+                registry.execute("recent_conversation_search", json.dumps({"limit": "many"}))
 
     def test_tool_registry_requires_get_before_update_when_profile_exists(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -177,11 +397,16 @@ class MemoryPromptTests(unittest.TestCase):
         instructions = build_session_instructions(
             "Snowman",
             "Base prompt.",
-            memory_index_context="# Memory Index\n\n## profile\nretrieval_tools: profile_memory_get",
+            memory_index_context=(
+                "# Memory Index\n\n"
+                "## profile\nretrieval_tools: profile_memory_get\n\n"
+                "## recent_conversation\nretrieval_tools: recent_conversation_search"
+            ),
         )
 
         self.assertIn("# Memory Index", instructions)
         self.assertIn("profile_memory_get", instructions)
+        self.assertIn("recent_conversation_search", instructions)
         self.assertIn("who is X, what is X, tell me about X", instructions)
         self.assertIn("ask one brief clarification question", instructions)
 
@@ -227,6 +452,41 @@ class MemoryConfigUITests(unittest.TestCase):
             self.assertIn("gpt-4.1", payload["recent_conversation_compact_model_options"])
             self.assertFalse(payload["baseline_exists"])
 
+    def test_memory_payload_for_api_includes_recent_sessions_newest_first(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = MemoryStore(Path(temp_dir))
+            store.append_recent_session(
+                {
+                    "session_id": "sess_old",
+                    "started_at": "2026-03-12T09:00:00Z",
+                    "ended_at": "2026-03-12T09:05:00Z",
+                    "summary": "Older session.",
+                }
+            )
+            store.append_recent_session(
+                {
+                    "session_id": "sess_new",
+                    "started_at": "2026-03-13T10:00:00Z",
+                    "ended_at": "2026-03-13T10:07:00Z",
+                    "summary": "Newer session.",
+                }
+            )
+
+            payload = _memory_payload_for_api(
+                {
+                    "advanced": {
+                        "memory_enabled": True,
+                        "memory_dir": temp_dir,
+                    }
+                }
+            )
+
+            self.assertEqual(payload["recent_sessions_path"], str(store.paths.recent_sessions_path))
+            self.assertEqual(
+                [record["session_id"] for record in payload["recent_sessions"]],
+                ["sess_new", "sess_old"],
+            )
+
     def test_memory_baseline_api_helpers(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             config = {
@@ -245,6 +505,50 @@ class MemoryConfigUITests(unittest.TestCase):
             restored = _restore_profile_baseline(config)
             self.assertEqual(restored["profile_markdown"], "## Family\n- Mira\n")
 
+    def test_delete_recent_session_api_helper(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = {
+                "advanced": {
+                    "memory_enabled": True,
+                    "memory_dir": temp_dir,
+                }
+            }
+            store = MemoryStore(Path(temp_dir))
+            store.append_recent_session(
+                {
+                    "session_id": "sess_1",
+                    "started_at": "2026-03-12T09:00:00Z",
+                    "ended_at": "2026-03-12T09:05:00Z",
+                    "summary": "First session.",
+                }
+            )
+            store.append_recent_session(
+                {
+                    "session_id": "sess_2",
+                    "started_at": "2026-03-13T09:00:00Z",
+                    "ended_at": "2026-03-13T09:05:00Z",
+                    "summary": "Second session.",
+                }
+            )
+
+            payload = _delete_recent_session(config, {"session_id": "sess_2"})
+
+            self.assertEqual(
+                [record["session_id"] for record in payload["recent_sessions"]],
+                ["sess_1"],
+            )
+
+    def test_delete_recent_session_api_helper_rejects_unknown_session(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = {
+                "advanced": {
+                    "memory_enabled": True,
+                    "memory_dir": temp_dir,
+                }
+            }
+            with self.assertRaisesRegex(RuntimeError, "Recent conversation not found: sess_missing"):
+                _delete_recent_session(config, {"session_id": "sess_missing"})
+
     def test_tool_payload_for_api_respects_memory_toggle(self) -> None:
         disabled_tools = _tool_payload_for_api({"advanced": {"memory_enabled": False}})
         enabled_tools = _tool_payload_for_api({"advanced": {"memory_enabled": True}})
@@ -254,6 +558,8 @@ class MemoryConfigUITests(unittest.TestCase):
 
         self.assertNotIn("profile_memory_get", disabled_names)
         self.assertIn("profile_memory_get", enabled_names)
+        self.assertNotIn("recent_conversation_search", disabled_names)
+        self.assertIn("recent_conversation_search", enabled_names)
 
 
 if __name__ == "__main__":
