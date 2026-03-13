@@ -31,7 +31,7 @@ from .config_store import (
     write_config_files,
 )
 from .memory import MemoryStore
-from .tools import build_tool_definitions
+from .tools import build_tool_ui_payload
 from .version import VERSION
 
 
@@ -410,6 +410,15 @@ HTML_PAGE = """<!doctype html>
     .tool-item p {
       margin: 0;
     }
+    .tool-fields {
+      margin-top: 14px;
+      display: grid;
+      gap: 10px;
+    }
+    .tool-field {
+      display: grid;
+      gap: 6px;
+    }
     .hidden { display: none; }
     @media (max-width: 720px) {
       .wrap { padding: 22px 12px 38px; }
@@ -584,7 +593,7 @@ HTML_PAGE = """<!doctype html>
     <div id="panel_tools" class="grid hidden">
       <section class="card">
         <h2>Tools</h2>
-        <p>Inspect the currently available runtime tools. Memory tools appear when memory is enabled.</p>
+        <p>Inspect the currently available runtime tools. Tool settings also live here and apply on Save And Restart. Memory tools appear when memory is enabled.</p>
         <div id="tools_list" class="tool-list"></div>
       </section>
     </div>
@@ -664,6 +673,7 @@ HTML_PAGE = """<!doctype html>
         location_region: $("location_region").value,
         location_country_code: $("location_country_code").value,
         location_timezone: $("location_timezone").value,
+        tool_config: collectToolConfig(),
         advanced
       };
     }
@@ -714,13 +724,78 @@ HTML_PAGE = """<!doctype html>
       autoGrowAdvanced();
     }
 
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    function renderToolField(tool, field) {
+      const fieldId = `tool_config__${tool.name}__${field.key}`;
+      const value = tool.config_values && Object.prototype.hasOwnProperty.call(tool.config_values, field.key)
+        ? tool.config_values[field.key]
+        : field.default;
+      if (field.type === "select") {
+        const options = Array.isArray(field.options) ? field.options : [];
+        return `
+          <div class="tool-field">
+            <label for="${fieldId}">${escapeHtml(field.label)}</label>
+            <select id="${fieldId}" data-tool-name="${tool.name}" data-tool-config-key="${field.key}" data-tool-config-type="${field.type}">
+              ${options.map((option) => {
+                const selected = String(option.value) === String(value) ? " selected" : "";
+                return `<option value="${escapeHtml(option.value)}"${selected}>${escapeHtml(option.label || option.value)}</option>`;
+              }).join("")}
+            </select>
+            <div class="hint">${escapeHtml(field.description || "")}</div>
+          </div>
+        `;
+      }
+      const inputType = field.type === "number" ? "number" : "text";
+      return `
+        <div class="tool-field">
+          <label for="${fieldId}">${escapeHtml(field.label)}</label>
+          <input id="${fieldId}" type="${inputType}" value="${escapeHtml(value)}" data-tool-name="${tool.name}" data-tool-config-key="${field.key}" data-tool-config-type="${field.type}">
+          <div class="hint">${escapeHtml(field.description || "")}</div>
+        </div>
+      `;
+    }
+
+    function collectToolConfig() {
+      const nodes = Array.from(document.querySelectorAll("[data-tool-name][data-tool-config-key]"));
+      const toolConfig = {};
+      for (const node of nodes) {
+        const toolName = node.getAttribute("data-tool-name");
+        const fieldKey = node.getAttribute("data-tool-config-key");
+        const fieldType = node.getAttribute("data-tool-config-type");
+        if (!toolName || !fieldKey) {
+          continue;
+        }
+        if (!toolConfig[toolName]) {
+          toolConfig[toolName] = {};
+        }
+        let value = node.value;
+        if (fieldType === "number") {
+          value = value === "" ? "" : Number(value);
+        }
+        toolConfig[toolName][fieldKey] = value;
+      }
+      return toolConfig;
+    }
+
     function renderTools(tools) {
       const items = Array.isArray(tools) ? tools : [];
       $("tools_list").innerHTML = items
         .map((tool) => `
           <div class="tool-item">
-            <h3>${tool.name}</h3>
-            <p>${tool.description}</p>
+            <h3>${escapeHtml(tool.name)}</h3>
+            <p>${escapeHtml(tool.description)}</p>
+            ${
+              Array.isArray(tool.config_fields) && tool.config_fields.length
+                ? `<div class="tool-fields">${tool.config_fields.map((field) => renderToolField(tool, field)).join("")}</div>`
+                : ""
+            }
           </div>
         `)
         .join("");
@@ -1340,16 +1415,14 @@ def _config_payload_for_api(config_payload: dict[str, object]) -> dict[str, obje
     return payload
 
 
-def _tool_payload_for_api(config_payload: dict[str, object]) -> list[dict[str, str]]:
+def _tool_payload_for_api(config_payload: dict[str, object]) -> list[dict[str, object]]:
     advanced = config_payload.get("advanced", {})
     memory_enabled = bool(advanced.get("memory_enabled", False)) if isinstance(advanced, dict) else False
-    return [
-        {
-            "name": definition.name,
-            "description": definition.description,
-        }
-        for definition in build_tool_definitions(memory_enabled=memory_enabled)
-    ]
+    tool_config = config_payload.get("tool_config", {})
+    return build_tool_ui_payload(
+        memory_enabled=memory_enabled,
+        tool_config=tool_config if isinstance(tool_config, dict) else {},
+    )
 
 
 def _memory_store_for_config(config_payload: dict[str, object]) -> MemoryStore:

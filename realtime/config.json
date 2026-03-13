@@ -12,6 +12,11 @@
   "location_region": "IL",
   "location_country_code": "US",
   "location_timezone": "America/Chicago",
+  "tool_config": {
+    "web_search": {
+      "model": "gpt-5.2"
+    }
+  },
   "advanced": {
     "openai_realtime_url": "wss://api.openai.com/v1/realtime",
     "input_transcription_model": "gpt-4o-mini-transcribe",
@@ -34,7 +39,6 @@
     "web_search_wait_cue_path": "audio/soft_piano_loop.wav",
     "web_search_wait_cue_delay_seconds": 0,
     "web_search_wait_cue_gain": 0.312,
-    "web_search_model": "gpt-5.2",
     "playback_device": "auto",
     "input_ns_enabled": true,
     "input_agc_enabled": true,

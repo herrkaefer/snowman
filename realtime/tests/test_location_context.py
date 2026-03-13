@@ -110,7 +110,7 @@ class LocationContextTests(unittest.TestCase):
     def test_web_search_uses_configured_location(self) -> None:
         settings = SimpleNamespace(
             openai_api_key="test-key",
-            web_search_model="gpt-5.2",
+            tool_config={"web_search": {"model": "gpt-5.2"}},
             location_city="Chicago",
             location_region="IL",
             location_country_code="US",
@@ -141,7 +141,7 @@ class LocationContextTests(unittest.TestCase):
     def test_web_search_omits_location_when_unconfigured(self) -> None:
         settings = SimpleNamespace(
             openai_api_key="test-key",
-            web_search_model="gpt-5.2",
+            tool_config={"web_search": {"model": "gpt-5.2"}},
             location_city="",
             location_region="",
             location_country_code="",

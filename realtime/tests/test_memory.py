@@ -94,12 +94,12 @@ class MemoryToolTests(unittest.TestCase):
             settings = SimpleNamespace(
                 memory_enabled=True,
                 memory_dir=temp_dir,
+                tool_config={"web_search": {"model": "gpt-5.2"}},
                 openai_api_key="unused",
                 location_city="",
                 location_region="",
                 location_country_code="",
                 location_timezone="",
-                web_search_model="gpt-5.2",
             )
             registry = ToolRegistry(settings)
             initial = json.loads(registry.execute("profile_memory_get", "{}"))
@@ -131,12 +131,12 @@ class MemoryToolTests(unittest.TestCase):
             settings = SimpleNamespace(
                 memory_enabled=True,
                 memory_dir=temp_dir,
+                tool_config={"web_search": {"model": "gpt-5.2"}},
                 openai_api_key="unused",
                 location_city="",
                 location_region="",
                 location_country_code="",
                 location_timezone="",
-                web_search_model="gpt-5.2",
             )
             registry = ToolRegistry(settings)
             initial = (
@@ -183,6 +183,24 @@ class MemoryPromptTests(unittest.TestCase):
 
 
 class MemoryConfigUITests(unittest.TestCase):
+    def test_tool_payload_includes_web_search_config_fields(self) -> None:
+        payload = _tool_payload_for_api(
+            {
+                "tool_config": {
+                    "web_search": {
+                        "model": "gpt-4.1",
+                    }
+                },
+                "advanced": {
+                    "memory_enabled": True,
+                },
+            }
+        )
+
+        web_search = next(item for item in payload if item["name"] == "web_search")
+        self.assertEqual(web_search["config_values"]["model"], "gpt-4.1")
+        self.assertEqual(web_search["config_fields"][0]["key"], "model")
+
     def test_memory_payload_for_api_includes_profile_and_index(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             payload = _memory_payload_for_api(

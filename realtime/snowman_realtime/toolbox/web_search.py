@@ -6,10 +6,16 @@ from typing import Any
 from urllib import error, request
 
 from ..config import build_web_search_user_location
-from ..tools import ToolContext, ToolDefinition, ToolSpec
+from ..tools import ToolConfigField, ToolContext, ToolDefinition, ToolSpec
 
 
 LOGGER = logging.getLogger(__name__)
+WEB_SEARCH_MODEL_OPTIONS = (
+    "gpt-5.2",
+    "gpt-5",
+    "gpt-5-mini",
+    "gpt-4.1",
+)
 
 
 def _execute(context: ToolContext, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -19,6 +25,9 @@ def _execute(context: ToolContext, arguments: dict[str, Any]) -> dict[str, Any]:
 
     settings = context.settings
     LOGGER.info("Running OpenAI web_search tool for query: %s", query)
+    tool_config = getattr(settings, "tool_config", {})
+    web_search_config = tool_config.get("web_search", {}) if isinstance(tool_config, dict) else {}
+    model = str(web_search_config.get("model", WEB_SEARCH_MODEL_OPTIONS[0])).strip() or WEB_SEARCH_MODEL_OPTIONS[0]
     user_location = build_web_search_user_location(
         city=settings.location_city,
         region=settings.location_region,
@@ -30,7 +39,7 @@ def _execute(context: ToolContext, arguments: dict[str, Any]) -> dict[str, Any]:
         tool_config["user_location"] = user_location
 
     body = {
-        "model": settings.web_search_model,
+        "model": model,
         "input": (
             "Search the web and answer briefly in the same language as the query. "
             "Focus on current factual information. Include at most three short sources.\n\n"
@@ -147,4 +156,17 @@ TOOL = ToolSpec(
         },
     ),
     execute=_execute,
+    config_fields=(
+        ToolConfigField(
+            key="model",
+            label="Model",
+            field_type="select",
+            description="Which Responses API model this tool should use for web search requests.",
+            default=WEB_SEARCH_MODEL_OPTIONS[0],
+            options=tuple(
+                {"value": model, "label": model}
+                for model in WEB_SEARCH_MODEL_OPTIONS
+            ),
+        ),
+    ),
 )

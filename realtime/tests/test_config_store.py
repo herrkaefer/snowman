@@ -19,6 +19,7 @@ from realtime.snowman_realtime.config_store import (
     validate_config_values,
     write_config_files,
 )
+from realtime.snowman_realtime.tools import build_default_tool_config
 from realtime.scripts.migrate_legacy_config import merge_config
 
 
@@ -73,6 +74,7 @@ class ConfigStoreTests(unittest.TestCase):
         self.assertEqual(config_values["openai_api_key"], "saved-openai")
         self.assertEqual(config_values["porcupine_access_key"], "saved-porcupine")
         self.assertEqual(config_values["location_city"], "Chicago")
+        self.assertEqual(config_values["tool_config"], build_default_tool_config())
 
     def test_load_config_values_reads_identity_file(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -212,6 +214,39 @@ class ConfigStoreTests(unittest.TestCase):
         self.assertEqual(config_values["output_gain"], 0.5)
         self.assertEqual(config_values["cue_output_gain"], 0.22)
         self.assertEqual(config_values["openai_voice"], "alloy")
+        self.assertEqual(config_values["tool_config"], build_default_tool_config())
+
+    def test_load_config_values_migrates_legacy_web_search_model_to_tool_config(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = Path(temp_dir)
+            data_dir.joinpath("config.json").write_text(
+                json.dumps(
+                    {
+                        "agent_name": "Snowman",
+                        "provider": "openai",
+                        "openai_realtime_model": "gpt-realtime",
+                        "openai_voice": "alloy",
+                        "advanced": {
+                            "web_search_model": "gpt-4.1",
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            data_dir.joinpath("secrets.json").write_text(
+                json.dumps(
+                    {
+                        "openai_api_key": "saved-openai",
+                        "porcupine_access_key": "saved-porcupine",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch.dict(os.environ, {"SNOWMAN_DATA_DIR": temp_dir}, clear=False):
+                config_values = load_config_values(default_system_prompt=DEFAULT_SYSTEM_PROMPT)
+
+        self.assertEqual(config_values["tool_config"]["web_search"]["model"], "gpt-4.1")
 
     def test_validation_reports_missing_required_fields(self) -> None:
         errors = validate_config_values(
@@ -266,6 +301,11 @@ class ConfigStoreTests(unittest.TestCase):
                     "openai_api_key": "test-openai",
                     "porcupine_access_key": "test-porcupine",
                     "admin_password": "admin-pass",
+                    "tool_config": {
+                        "web_search": {
+                            "model": "gpt-4.1",
+                        }
+                    },
                     "advanced": {},
                 },
             )
@@ -283,6 +323,7 @@ class ConfigStoreTests(unittest.TestCase):
         self.assertEqual(config_payload["output_gain"], 0.35)
         self.assertEqual(config_payload["cue_output_gain"], 0.78)
         self.assertEqual(config_payload["custom_wake_keyword_path"], "/tmp/custom.ppn")
+        self.assertEqual(config_payload["tool_config"]["web_search"]["model"], "gpt-4.1")
         self.assertEqual(identity_markdown, "Prompt\n")
         self.assertEqual(secrets_payload["openai_api_key"], "test-openai")
         self.assertEqual(secrets_payload["admin_password"], "admin-pass")
@@ -307,6 +348,11 @@ class ConfigStoreTests(unittest.TestCase):
                 "openai_api_key": "test-openai",
                 "porcupine_access_key": "test-porcupine",
                 "admin_password": "",
+                "tool_config": {
+                    "web_search": {
+                        "model": "gpt-4.1",
+                    }
+                },
                 "advanced": {
                     "audio_device_index": 4,
                     "playback_device": "plughw:2,0",
@@ -316,6 +362,7 @@ class ConfigStoreTests(unittest.TestCase):
 
         self.assertEqual(payload["audio_device_index"], 4)
         self.assertEqual(payload["playback_device"], "plughw:2,0")
+        self.assertEqual(payload["tool_config"]["web_search"]["model"], "gpt-4.1")
 
     def test_config_updates_from_legacy_env_parses_advanced_values(self) -> None:
         updates = config_updates_from_legacy_env(
@@ -345,6 +392,7 @@ class ConfigStoreTests(unittest.TestCase):
         self.assertEqual(payload["wake_word_sensitivity"], 0.5)
         self.assertEqual(payload["output_gain"], 0.5)
         self.assertEqual(payload["cue_output_gain"], 0.22)
+        self.assertEqual(payload["tool_config"], build_default_tool_config())
         self.assertTrue(payload["advanced"]["memory_enabled"])
 
     def test_legacy_advanced_overrides_default_values_during_migration(self) -> None:

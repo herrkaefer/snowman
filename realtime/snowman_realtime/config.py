@@ -4,6 +4,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from .config_store import DEFAULT_MEMORY_DIR, load_config_values
 
@@ -181,7 +182,7 @@ class Settings:
     web_search_wait_cue_path: str
     web_search_wait_cue_delay_seconds: float
     web_search_wait_cue_gain: float
-    web_search_model: str
+    tool_config: dict[str, dict[str, Any]]
     playback_device: str
     output_gain: float
     cue_output_gain: float
@@ -295,7 +296,7 @@ class Settings:
             ),
             web_search_wait_cue_delay_seconds=_get_float(advanced, "web_search_wait_cue_delay_seconds", 0.5),
             web_search_wait_cue_gain=_get_float(advanced, "web_search_wait_cue_gain", 0.20),
-            web_search_model=_get_str(advanced, "web_search_model", "gpt-5.2"),
+            tool_config=_get_tool_config(config_values.get("tool_config")),
             playback_device=_get_str(advanced, "playback_device", "auto"),
             output_gain=float(config_values["output_gain"]),
             cue_output_gain=float(config_values["cue_output_gain"]),
@@ -396,3 +397,16 @@ def _get_int(values: dict[str, object], name: str, default: int) -> int:
 def _get_float(values: dict[str, object], name: str, default: float) -> float:
     value = values.get(name, default)
     return float(value)
+
+
+def _get_tool_config(value: object) -> dict[str, dict[str, Any]]:
+    if not isinstance(value, dict):
+        return {}
+    normalized: dict[str, dict[str, Any]] = {}
+    for tool_name, tool_values in value.items():
+        if not isinstance(tool_name, str) or not isinstance(tool_values, dict):
+            continue
+        normalized[tool_name] = {
+            key: item for key, item in tool_values.items() if isinstance(key, str)
+        }
+    return normalized

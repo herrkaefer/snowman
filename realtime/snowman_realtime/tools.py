@@ -43,7 +43,18 @@ def _always_enabled(_: ToolAvailability) -> bool:
 class ToolSpec:
     definition: ToolDefinition
     execute: Callable[[ToolContext, dict[str, Any]], dict[str, Any]]
+    config_fields: tuple["ToolConfigField", ...] = ()
     is_enabled: Callable[[ToolAvailability], bool] = _always_enabled
+
+
+@dataclass(frozen=True)
+class ToolConfigField:
+    key: str
+    label: str
+    field_type: str
+    description: str
+    default: Any
+    options: tuple[dict[str, str], ...] = ()
 
 
 @lru_cache(maxsize=1)
@@ -70,6 +81,67 @@ def build_tool_definitions(*, memory_enabled: bool) -> list[ToolDefinition]:
         for spec in discover_tool_specs()
         if spec.is_enabled(availability)
     ]
+
+
+def build_tool_ui_payload(
+    *,
+    memory_enabled: bool,
+    tool_config: dict[str, dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    availability = ToolAvailability(memory_enabled=memory_enabled)
+    current_tool_config = tool_config if isinstance(tool_config, dict) else {}
+    items: list[dict[str, Any]] = []
+    for spec in discover_tool_specs():
+        if not spec.is_enabled(availability):
+            continue
+        spec_values = current_tool_config.get(spec.definition.name, {})
+        if not isinstance(spec_values, dict):
+            spec_values = {}
+        fields = []
+        values: dict[str, Any] = {}
+        for field in spec.config_fields:
+            fields.append(
+                {
+                    "key": field.key,
+                    "label": field.label,
+                    "type": field.field_type,
+                    "description": field.description,
+                    "default": field.default,
+                    "options": [dict(option) for option in field.options],
+                }
+            )
+            values[field.key] = spec_values.get(field.key, field.default)
+        items.append(
+            {
+                "name": spec.definition.name,
+                "description": spec.definition.description,
+                "config_fields": fields,
+                "config_values": values,
+            }
+        )
+    return items
+
+
+def build_default_tool_config() -> dict[str, dict[str, Any]]:
+    defaults: dict[str, dict[str, Any]] = {}
+    for spec in discover_tool_specs():
+        if not spec.config_fields:
+            continue
+        defaults[spec.definition.name] = {
+            field.key: field.default for field in spec.config_fields
+        }
+    return defaults
+
+
+def get_tool_config_field(tool_name: str, field_key: str) -> ToolConfigField | None:
+    for spec in discover_tool_specs():
+        if spec.definition.name != tool_name:
+            continue
+        for field in spec.config_fields:
+            if field.key == field_key:
+                return field
+        return None
+    return None
 
 
 class ToolRegistry:

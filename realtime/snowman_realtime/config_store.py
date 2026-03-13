@@ -91,7 +91,6 @@ DEFAULT_ADVANCED_CONFIG: dict[str, object] = {
     "web_search_wait_cue_path": "audio/soft_piano_loop.wav",
     "web_search_wait_cue_delay_seconds": 0.5,
     "web_search_wait_cue_gain": 0.20,
-    "web_search_model": "gpt-5.2",
     "playback_device": "auto",
     "input_ns_enabled": False,
     "input_agc_enabled": False,
@@ -200,6 +199,7 @@ def default_config_values(*, default_system_prompt: str) -> dict[str, object]:
         "openai_api_key": "",
         "porcupine_access_key": "",
         "admin_password": "",
+        "tool_config": _normalized_tool_config({}),
         "advanced": dict(DEFAULT_ADVANCED_CONFIG),
     }
 
@@ -221,6 +221,7 @@ def default_public_config(*, default_system_prompt: str) -> dict[str, object]:
         "location_region": defaults["location_region"],
         "location_country_code": defaults["location_country_code"],
         "location_timezone": defaults["location_timezone"],
+        "tool_config": json.loads(json.dumps(defaults["tool_config"])),
         "advanced": dict(DEFAULT_ADVANCED_CONFIG),
     }
 
@@ -267,6 +268,15 @@ def materialize_config_values(
             advanced[key] = value
 
     prompt_value = _editable_system_prompt(identity_prompt) or defaults["system_prompt"]
+    tool_config = _normalized_tool_config(config_payload.get("tool_config", {}))
+    web_search_config = tool_config.setdefault("web_search", {})
+    legacy_model = str(advanced_payload.get("web_search_model", "")).strip()
+    if legacy_model and (
+        not isinstance(config_payload.get("tool_config", {}), dict)
+        or not isinstance(config_payload.get("tool_config", {}).get("web_search"), dict)
+        or "model" not in config_payload.get("tool_config", {}).get("web_search", {})
+    ):
+        web_search_config["model"] = legacy_model
 
     return {
         "agent_name": str(config_payload.get("agent_name", defaults["agent_name"])).strip(),
@@ -297,6 +307,7 @@ def materialize_config_values(
         "openai_api_key": secret_payload.get("openai_api_key", "").strip(),
         "porcupine_access_key": secret_payload.get("porcupine_access_key", "").strip(),
         "admin_password": secret_payload.get("admin_password", "").strip(),
+        "tool_config": tool_config,
         "advanced": advanced,
     }
 
@@ -304,7 +315,9 @@ def materialize_config_values(
 def merge_config_values(current: dict[str, object], updates: dict[str, object]) -> dict[str, object]:
     merged = dict(current)
     current_advanced = current.get("advanced", {})
+    current_tool_config = current.get("tool_config", {})
     merged["advanced"] = dict(current_advanced) if isinstance(current_advanced, dict) else {}
+    merged["tool_config"] = json.loads(json.dumps(current_tool_config)) if isinstance(current_tool_config, dict) else {}
 
     for key, value in updates.items():
         if key in {"openai_api_key", "porcupine_access_key", "admin_password"}:
@@ -319,6 +332,23 @@ def merge_config_values(current: dict[str, object], updates: dict[str, object]) 
             for adv_key, adv_value in value.items():
                 if adv_key in DEFAULT_ADVANCED_CONFIG:
                     merged["advanced"][adv_key] = adv_value
+            continue
+        if key == "tool_config":
+            if not isinstance(value, dict):
+                continue
+            for tool_name, tool_values in value.items():
+                if not isinstance(tool_name, str) or not isinstance(tool_values, dict):
+                    continue
+                existing_values = merged["tool_config"].get(tool_name, {})
+                merged["tool_config"][tool_name] = (
+                    dict(existing_values) if isinstance(existing_values, dict) else {}
+                )
+                for field_key, field_value in tool_values.items():
+                    if not isinstance(field_key, str):
+                        continue
+                    merged["tool_config"][tool_name][field_key] = (
+                        field_value.strip() if isinstance(field_value, str) else field_value
+                    )
             continue
         if isinstance(value, str):
             merged[key] = value.strip()
@@ -378,6 +408,29 @@ def validate_config_values(payload: dict[str, object]) -> list[str]:
         playback_device = str(advanced.get("playback_device", "auto")).strip()
         if not playback_device:
             errors.append("Speaker output must be a valid device selection.")
+
+    tool_config = payload.get("tool_config", {})
+    if not isinstance(tool_config, dict):
+        errors.append("Tool config must be an object.")
+    else:
+        web_search_config = tool_config.get("web_search", {})
+        if web_search_config is not None:
+            if not isinstance(web_search_config, dict):
+                errors.append("web_search tool config must be an object.")
+            else:
+                web_search_model = str(web_search_config.get("model", "")).strip()
+                field = _tool_config_field("web_search", "model")
+                allowed_models = [
+                    str(option.get("value", ""))
+                    for option in getattr(field, "options", ())
+                    if isinstance(option, dict) and str(option.get("value", "")).strip()
+                ]
+                if web_search_model and allowed_models and web_search_model not in allowed_models:
+                    errors.append(
+                        "web_search model must be one of: "
+                        + ", ".join(allowed_models)
+                        + "."
+                    )
 
     try:
         wake_word_sensitivity = float(payload.get("wake_word_sensitivity", 0.5))
@@ -449,6 +502,7 @@ def config_values_for_api(payload: dict[str, object]) -> dict[str, object]:
         "porcupine_access_key_configured": bool(porcupine_access_key),
         "openai_api_key_masked": _mask_secret(openai_api_key),
         "porcupine_access_key_masked": _mask_secret(porcupine_access_key),
+        "tool_config": _normalized_tool_config(payload.get("tool_config", {})),
         "provider_options": list(PROVIDER_OPTIONS),
         "openai_realtime_model_options": list(OPENAI_REALTIME_MODEL_OPTIONS),
         "openai_voice_options": list(OPENAI_VOICE_OPTIONS),
@@ -474,6 +528,7 @@ def write_config_files(paths: ConfigPaths, payload: dict[str, object]) -> None:
         "location_region": str(payload.get("location_region", "")).strip(),
         "location_country_code": _normalized_country_code(payload.get("location_country_code", "")),
         "location_timezone": str(payload.get("location_timezone", "")).strip(),
+        "tool_config": _normalized_tool_config(payload.get("tool_config", {})),
         "advanced": _normalized_advanced_config(payload.get("advanced", {})),
     }
     config_tmp = paths.config_path.with_suffix(".json.tmp")
@@ -559,6 +614,36 @@ def _normalized_advanced_config(value: object) -> dict[str, object]:
             if key in DEFAULT_ADVANCED_CONFIG:
                 normalized[key] = item
     return normalized
+
+
+def _normalized_tool_config(value: object) -> dict[str, dict[str, object]]:
+    normalized = json.loads(json.dumps(_default_tool_config()))
+    if not isinstance(value, dict):
+        return normalized
+    for tool_name, tool_values in value.items():
+        if not isinstance(tool_name, str) or not isinstance(tool_values, dict):
+            continue
+        existing = normalized.get(tool_name)
+        if not isinstance(existing, dict):
+            existing = {}
+            normalized[tool_name] = existing
+        for field_key, field_value in tool_values.items():
+            if not isinstance(field_key, str):
+                continue
+            existing[field_key] = field_value.strip() if isinstance(field_value, str) else field_value
+    return normalized
+
+
+def _default_tool_config() -> dict[str, dict[str, object]]:
+    from .tools import build_default_tool_config
+
+    return build_default_tool_config()
+
+
+def _tool_config_field(tool_name: str, field_key: str) -> object | None:
+    from .tools import get_tool_config_field
+
+    return get_tool_config_field(tool_name, field_key)
 
 
 def _mask_secret(value: str) -> str:
