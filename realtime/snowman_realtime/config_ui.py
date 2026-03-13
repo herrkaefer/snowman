@@ -480,6 +480,10 @@ HTML_PAGE = """<!doctype html>
       color: var(--warn);
       box-shadow: 3px 3px 0 rgba(22, 48, 76, 0.12);
     }
+    .conversation-delete:hover {
+      background: #e05536;
+      color: #fff6f0;
+    }
     .tool-field {
       display: grid;
       gap: 6px;
@@ -525,7 +529,7 @@ HTML_PAGE = """<!doctype html>
       <button id="tab_audio" class="tab" type="button">Audio</button>
       <button id="tab_tools" class="tab" type="button">Tools</button>
       <button id="tab_memory" class="tab" type="button">Memory</button>
-      <button id="tab_conversation" class="tab" type="button">Conversation</button>
+      <button id="tab_conversation" class="tab" type="button">Conversations</button>
       <button id="tab_advanced" class="tab" type="button">Advanced</button>
     </div>
 
@@ -712,6 +716,8 @@ HTML_PAGE = """<!doctype html>
 
   <script>
     function $(id) { return document.getElementById(id); }
+    let latestRecentSessions = [];
+    let latestRecentSessionsPath = "";
 
     function setMessage(text, kind = "") {
       const node = $("message");
@@ -893,7 +899,9 @@ HTML_PAGE = """<!doctype html>
       $("memory_status").textContent = memory.memory_enabled
         ? `Memory is enabled. Storage: ${memory.memory_dir}. Baseline: ${memory.baseline_exists ? "saved" : "not saved"}.`
         : `Memory is disabled in runtime config. You can still inspect and edit files here. Storage: ${memory.memory_dir}. Baseline: ${memory.baseline_exists ? "saved" : "not saved"}.`;
-      renderRecentSessions(memory.recent_sessions || [], memory.recent_sessions_path || "");
+      latestRecentSessions = Array.isArray(memory.recent_sessions) ? memory.recent_sessions : [];
+      latestRecentSessionsPath = memory.recent_sessions_path || "";
+      renderRecentSessions(latestRecentSessions, latestRecentSessionsPath);
       autoGrowProfile();
       autoGrowMemoryIndex();
     }
@@ -910,8 +918,9 @@ HTML_PAGE = """<!doctype html>
       $("conversation_list").innerHTML = items
         .map((record) => {
           const endedAt = record.ended_at || "Unknown end time";
-          const startedAt = record.started_at || "Unknown start time";
+          const startedAt = formatSessionStartTime(record.started_at);
           const sessionId = record.session_id || "unknown";
+          const duration = formatSessionDuration(record.started_at, record.ended_at);
           const language = record.language ? escapeHtml(record.language) : "n/a";
           const entities = Array.isArray(record.entities) && record.entities.length
             ? record.entities.map((value) => escapeHtml(value)).join(", ")
@@ -928,12 +937,9 @@ HTML_PAGE = """<!doctype html>
                 <button class="secondary conversation-delete" type="button" aria-label="Delete conversation" title="Delete conversation" data-delete-session-id="${escapeHtml(sessionId)}">&times;</button>
               </div>
               <div class="conversation-meta-row">
-                <div class="conversation-meta conversation-meta-item"><span class="conversation-label">Session ID:</span> ${escapeHtml(sessionId)}</div>
-                <div class="conversation-meta conversation-meta-item"><span class="conversation-label">Source:</span> ${source}</div>
-              </div>
-              <div class="conversation-meta-row">
                 <div class="conversation-meta conversation-meta-item"><span class="conversation-label">Started:</span> ${escapeHtml(startedAt)}</div>
-                <div class="conversation-meta conversation-meta-item"><span class="conversation-label">Ended:</span> ${escapeHtml(endedAt)}</div>
+                <div class="conversation-meta conversation-meta-item"><span class="conversation-label">Duration:</span> ${escapeHtml(duration)}</div>
+                <div class="conversation-meta conversation-meta-item"><span class="conversation-label">Source:</span> ${source}</div>
               </div>
               <div class="conversation-meta-row">
                 <div class="conversation-meta conversation-meta-item"><span class="conversation-label">Language:</span> ${language}</div>
@@ -944,6 +950,58 @@ HTML_PAGE = """<!doctype html>
           `;
         })
         .join("");
+    }
+
+    function formatSessionStartTime(startedAt) {
+      const rawValue = String(startedAt || "").trim();
+      if (!rawValue) {
+        return "Unknown start time";
+      }
+      const timezone = $("location_timezone").value || "";
+      if (!timezone) {
+        return rawValue;
+      }
+      const parsed = new Date(rawValue);
+      if (Number.isNaN(parsed.getTime())) {
+        return rawValue;
+      }
+      try {
+        return new Intl.DateTimeFormat("en-US", {
+          timeZone: timezone,
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: false,
+          timeZoneName: "short",
+        }).format(parsed);
+      } catch (_error) {
+        return rawValue;
+      }
+    }
+
+    function formatSessionDuration(startedAt, endedAt) {
+      if (!startedAt || !endedAt) {
+        return "n/a";
+      }
+      const start = new Date(startedAt);
+      const end = new Date(endedAt);
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+        return "n/a";
+      }
+      const totalSeconds = Math.max(0, Math.round((end.getTime() - start.getTime()) / 1000));
+      const hours = Math.floor(totalSeconds / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+      const seconds = totalSeconds % 60;
+      if (hours > 0) {
+        return `${hours}h ${minutes}m`;
+      }
+      if (minutes > 0) {
+        return `${minutes}m ${seconds}s`;
+      }
+      return `${seconds}s`;
     }
 
     function setConversationDeleteButtonsDisabled(disabled) {
@@ -1336,6 +1394,7 @@ HTML_PAGE = """<!doctype html>
     $("advanced_json").addEventListener("input", autoGrowAdvanced);
     $("profile_markdown").addEventListener("input", autoGrowProfile);
     $("memory_index_markdown").addEventListener("input", autoGrowMemoryIndex);
+    $("location_timezone").addEventListener("change", () => renderRecentSessions(latestRecentSessions, latestRecentSessionsPath));
     $("tab_identity").addEventListener("click", () => showTab("identity"));
     $("tab_ai").addEventListener("click", () => showTab("ai"));
     $("tab_audio").addEventListener("click", () => showTab("audio"));
