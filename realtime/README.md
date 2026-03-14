@@ -45,13 +45,24 @@ flowchart LR
     wake --> session["Session controller"]
     session --> mic["Microphone stream + NS/AGC + resampler"]
     mic --> rt["OpenAI Realtime voice session"]
+    rt --> memory["Persistent memory store"]
     rt --> tools["Tool registry"]
     tools --> webTool["web_search"]
     webTool --> web["Web"]
-    tools --> memoryTool["memory tools"]
-    memoryTool --> memory["Persistent memory store"]
-    tools --> gpioTool["GPIO tools"]
-    gpioTool --> gpio["GPIO-controlled devices"]
+    tools --> profileTool["profile memory tools"]
+    profileTool --> memory
+    tools --> convoTool["recent_conversation_search"]
+    convoTool --> memory
+    tools --> haSearch["home_assistant_search_entities"]
+    tools --> haState["home_assistant_get_state"]
+    tools --> haCall["home_assistant_call_service"]
+    haSearch --> haRegistry["HA registry cache"]
+    haState --> haApi["Home Assistant API"]
+    haCall --> haApi
+    haRegistry --> haApi
+    memory --> profile["profile.md"]
+    memory --> memoryIndex["MEMORY.md"]
+    memory --> conversations["recent_sessions.jsonl"]
     tools --> rt
     rt --> audio["Streaming response audio"]
     audio --> player["Local playback via aplay"]

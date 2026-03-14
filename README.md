@@ -69,7 +69,7 @@ The new app lives in [`realtime/`](./realtime/README.md).
 
 - Porcupine for wake word detection 
 - realtime speech-to-speech via websocket (OpenAI realtime API /  Gemini Live API)
-- Tools: web search, memory search / update, and GPIO operation, etc.
+- Tools: web search, profile memory, recent conversation retrieval, and Home Assistant integration
 
 ### Architecture
 
@@ -78,13 +78,24 @@ flowchart LR
     user["User"] --> wake["Porcupine wake word"]
     wake --> session["Session controller"]
     session --> rt["Realtime audio over WebSocket"]
+    rt --> memory["Persistent memory"]
     rt --> tools["Tool registry"]
     tools --> webTool["web_search"]
     webTool --> web["Web"]
-    tools --> memoryTool["memory tools"]
-    memoryTool --> memory["Persistent memory"]
-    tools --> gpioTool["GPIO tools"]
-    gpioTool --> gpio["GPIO devices"]
+    tools --> profileTool["profile memory tools"]
+    profileTool --> memory
+    tools --> convoTool["recent_conversation_search"]
+    convoTool --> memory
+    tools --> haSearch["home_assistant_search_entities"]
+    tools --> haState["home_assistant_get_state"]
+    tools --> haCall["home_assistant_call_service"]
+    haSearch --> haRegistry["HA registry cache"]
+    haState --> haApi["Home Assistant API"]
+    haCall --> haApi
+    haRegistry --> haApi
+    memory --> profile["profile.md"]
+    memory --> memoryIndex["MEMORY.md"]
+    memory --> conversations["recent_sessions.jsonl"]
     tools --> rt
     rt --> speaker["Streamed reply playback"]
     speaker --> next["Next turn in session"]
