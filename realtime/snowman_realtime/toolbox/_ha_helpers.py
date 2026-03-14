@@ -13,11 +13,18 @@ AREA_LOOKUP_TEMPLATE = "{{ area_name(%r) or '' }}"
 
 def home_assistant_url(settings: Any) -> str:
     tool_config = getattr(settings, "tool_config", {})
-    home_assistant_config = (
-        tool_config.get("home_assistant", {})
-        if isinstance(tool_config, dict)
-        else {}
-    )
+    home_assistant_config = {}
+    if isinstance(tool_config, dict):
+        for tool_name in (
+            "home_assistant_call_service",
+            "home_assistant_get_state",
+            "home_assistant_search_entities",
+            "home_assistant",
+        ):
+            candidate = tool_config.get(tool_name, {})
+            if isinstance(candidate, dict) and candidate:
+                home_assistant_config = candidate
+                break
     ha_url = (
         str(home_assistant_config.get("ha_url", "")).strip()
         if isinstance(home_assistant_config, dict)

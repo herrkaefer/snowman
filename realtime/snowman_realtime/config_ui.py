@@ -981,7 +981,7 @@ HTML_PAGE = """<!doctype html>
                 ? `<div class="tool-fields">${tool.config_fields.map((field) => renderToolField(tool, field)).join("")}</div>`
                 : ""
             }
-            ${tool.name === "home_assistant" ? renderHomeAssistantActions(tool) : ""}
+            ${tool.name === "home_assistant_call_service" ? renderHomeAssistantActions(tool) : ""}
           </div>
         `)
         .join("");
@@ -1465,7 +1465,7 @@ HTML_PAGE = """<!doctype html>
       } catch (error) {
         updateHomeAssistantRegistryStatus({
           exists: false,
-          configured_ha_url: (($("tool_config__home_assistant__ha_url") || {}).value || "").trim()
+          configured_ha_url: (($("tool_config__home_assistant_call_service__ha_url") || {}).value || "").trim()
         });
         setMessage(error.message, "warn");
       } finally {
@@ -1811,7 +1811,7 @@ def _tool_payload_for_api(config_payload: dict[str, object]) -> list[dict[str, o
     )
     ha_access_token = str(config_payload.get("ha_access_token", "")).strip()
     for item in payload:
-        if item.get("name") != "home_assistant":
+        if item.get("name") != "home_assistant_call_service":
             continue
         item["secret_fields"] = [
             {

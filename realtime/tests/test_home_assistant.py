@@ -60,7 +60,7 @@ def _settings() -> SimpleNamespace:
     return SimpleNamespace(
         memory_enabled=False,
         tool_config={
-            "home_assistant": {
+            "home_assistant_call_service": {
                 "ha_url": "http://ha.local:8123",
             }
         },
@@ -72,20 +72,22 @@ class HomeAssistantToolTests(unittest.TestCase):
     def test_build_tool_definitions_include_home_assistant_tools(self) -> None:
         names = [definition.name for definition in build_tool_definitions(memory_enabled=False)]
 
-        self.assertIn("home_assistant", names)
-        self.assertIn("home_assistant_entities", names)
+        self.assertIn("home_assistant_call_service", names)
+        self.assertIn("home_assistant_get_state", names)
+        self.assertIn("home_assistant_search_entities", names)
 
     def test_session_instructions_route_home_assistant_requests(self) -> None:
         instructions = build_session_instructions("Snowman", "Base prompt.")
 
-        self.assertIn("home_assistant_entities", instructions)
-        self.assertIn("home_assistant", instructions)
+        self.assertIn("home_assistant_search_entities", instructions)
+        self.assertIn("home_assistant_get_state", instructions)
+        self.assertIn("home_assistant_call_service", instructions)
 
     def test_tool_payload_includes_home_assistant_secret_field(self) -> None:
         payload = _tool_payload_for_api(
             {
                 "tool_config": {
-                    "home_assistant": {
+                    "home_assistant_call_service": {
                         "ha_url": "http://ha.local:8123",
                     }
                 },
@@ -96,7 +98,7 @@ class HomeAssistantToolTests(unittest.TestCase):
             }
         )
 
-        home_assistant = next(item for item in payload if item["name"] == "home_assistant")
+        home_assistant = next(item for item in payload if item["name"] == "home_assistant_call_service")
         self.assertEqual(
             home_assistant["config_values"]["ha_url"],
             "http://ha.local:8123",
@@ -104,10 +106,10 @@ class HomeAssistantToolTests(unittest.TestCase):
         self.assertEqual(home_assistant["secret_fields"][0]["key"], "ha_access_token")
         self.assertTrue(home_assistant["secret_fields"][0]["configured"])
 
-    def test_home_assistant_entities_matches_area_name(self) -> None:
+    def test_home_assistant_search_entities_matches_area_name(self) -> None:
         registry = ToolRegistry(_settings())
         with patch(
-            "realtime.snowman_realtime.toolbox.home_assistant_entities.fetch_states",
+            "realtime.snowman_realtime.toolbox.home_assistant_search_entities.fetch_states",
             return_value=[
                 {
                     "entity_id": "light.ceiling_1",
@@ -126,12 +128,12 @@ class HomeAssistantToolTests(unittest.TestCase):
                 },
             ],
         ), patch(
-            "realtime.snowman_realtime.toolbox.home_assistant_entities.lookup_area_name",
+            "realtime.snowman_realtime.toolbox.home_assistant_search_entities.lookup_area_name",
             side_effect=lambda _settings, entity_id: "Living Room" if entity_id.startswith("light.") else "",
         ):
             result = json.loads(
                 registry.execute(
-                    "home_assistant_entities",
+                    "home_assistant_search_entities",
                     json.dumps({"domain_filter": "light", "query": "living room", "limit": 5}),
                 )
             )
@@ -143,10 +145,10 @@ class HomeAssistantToolTests(unittest.TestCase):
         )
         self.assertTrue(all(item["area_name"] == "Living Room" for item in result["entities"]))
 
-    def test_home_assistant_entities_expands_chinese_aliases(self) -> None:
+    def test_home_assistant_search_entities_expands_chinese_aliases(self) -> None:
         registry = ToolRegistry(_settings())
         with patch(
-            "realtime.snowman_realtime.toolbox.home_assistant_entities.fetch_states",
+            "realtime.snowman_realtime.toolbox.home_assistant_search_entities.fetch_states",
             return_value=[
                 {
                     "entity_id": "light.living_room_ceiling_light",
@@ -160,12 +162,12 @@ class HomeAssistantToolTests(unittest.TestCase):
                 },
             ],
         ), patch(
-            "realtime.snowman_realtime.toolbox.home_assistant_entities.lookup_area_name",
+            "realtime.snowman_realtime.toolbox.home_assistant_search_entities.lookup_area_name",
             return_value="",
         ):
             result = json.loads(
                 registry.execute(
-                    "home_assistant_entities",
+                    "home_assistant_search_entities",
                     json.dumps({"domain_filter": "light", "query": "客厅的灯", "limit": 5}, ensure_ascii=False),
                 )
             )
@@ -173,10 +175,10 @@ class HomeAssistantToolTests(unittest.TestCase):
         self.assertGreaterEqual(result["count"], 1)
         self.assertEqual(result["entities"][0]["entity_id"], "light.living_room_ceiling_light")
 
-    def test_home_assistant_entities_prefers_structured_area_and_name(self) -> None:
+    def test_home_assistant_search_entities_prefers_structured_area_and_name(self) -> None:
         registry = ToolRegistry(_settings())
         with patch(
-            "realtime.snowman_realtime.toolbox.home_assistant_entities.fetch_states",
+            "realtime.snowman_realtime.toolbox.home_assistant_search_entities.fetch_states",
             return_value=[
                 {
                     "entity_id": "light.foyer_light",
@@ -190,12 +192,12 @@ class HomeAssistantToolTests(unittest.TestCase):
                 },
             ],
         ), patch(
-            "realtime.snowman_realtime.toolbox.home_assistant_entities.lookup_area_name",
+            "realtime.snowman_realtime.toolbox.home_assistant_search_entities.lookup_area_name",
             side_effect=lambda _settings, entity_id: "Foyer" if entity_id == "light.foyer_light" else "Dining Room",
         ):
             result = json.loads(
                 registry.execute(
-                    "home_assistant_entities",
+                    "home_assistant_search_entities",
                     json.dumps({"domain_filter": "light", "area": "门厅", "name": "灯", "limit": 5}, ensure_ascii=False),
                 )
             )
@@ -203,7 +205,7 @@ class HomeAssistantToolTests(unittest.TestCase):
         self.assertEqual(result["count"], 1)
         self.assertEqual(result["entities"][0]["entity_id"], "light.foyer_light")
 
-    def test_home_assistant_entities_uses_registry_snapshot_area_mapping(self) -> None:
+    def test_home_assistant_search_entities_uses_registry_snapshot_area_mapping(self) -> None:
         registry = ToolRegistry(_settings())
         snapshot = {
             "ha_url": "http://ha.local:8123",
@@ -229,10 +231,10 @@ class HomeAssistantToolTests(unittest.TestCase):
             ],
         }
         with patch(
-            "realtime.snowman_realtime.toolbox.home_assistant_entities.load_registry_snapshot",
+            "realtime.snowman_realtime.toolbox.home_assistant_search_entities.load_registry_snapshot",
             return_value=snapshot,
         ), patch(
-            "realtime.snowman_realtime.toolbox.home_assistant_entities.fetch_states",
+            "realtime.snowman_realtime.toolbox.home_assistant_search_entities.fetch_states",
             return_value=[
                 {
                     "entity_id": "light.sideboard_lamp",
@@ -246,12 +248,12 @@ class HomeAssistantToolTests(unittest.TestCase):
                 },
             ],
         ), patch(
-            "realtime.snowman_realtime.toolbox.home_assistant_entities.lookup_area_name",
+            "realtime.snowman_realtime.toolbox.home_assistant_search_entities.lookup_area_name",
             side_effect=AssertionError("lookup_area_name should not be used when registry snapshot exists"),
         ):
             result = json.loads(
                 registry.execute(
-                    "home_assistant_entities",
+                    "home_assistant_search_entities",
                     json.dumps({"domain_filter": "light", "area": "餐厅", "name": "灯", "limit": 5}, ensure_ascii=False),
                 )
             )
@@ -260,50 +262,95 @@ class HomeAssistantToolTests(unittest.TestCase):
         self.assertEqual(result["entities"][0]["entity_id"], "light.sideboard_lamp")
         self.assertEqual(result["entities"][0]["area_name"], "Dining Area")
 
-    def test_home_assistant_get_state_returns_compact_state(self) -> None:
+    def test_home_assistant_get_state_returns_compact_state_dict(self) -> None:
         registry = ToolRegistry(_settings())
         with patch(
-            "realtime.snowman_realtime.toolbox.home_assistant.fetch_state",
-            return_value={
-                "entity_id": "climate.downstairs",
-                "state": "cool",
-                "attributes": {"friendly_name": "Downstairs Thermostat", "temperature": 72},
-            },
+            "realtime.snowman_realtime.toolbox.home_assistant_get_state.fetch_state",
+            side_effect=[
+                {
+                    "entity_id": "climate.downstairs",
+                    "state": "cool",
+                    "attributes": {"friendly_name": "Downstairs Thermostat", "temperature": 72},
+                }
+            ],
         ), patch(
-            "realtime.snowman_realtime.toolbox.home_assistant.lookup_area_name",
+            "realtime.snowman_realtime.toolbox.home_assistant_get_state.lookup_area_name",
             return_value="Living Room",
         ):
             result = json.loads(
                 registry.execute(
-                    "home_assistant",
-                    json.dumps({"action": "get_state", "entity_id": "climate.downstairs"}),
+                    "home_assistant_get_state",
+                    json.dumps({"entity_id": "climate.downstairs"}),
                 )
             )
 
         self.assertTrue(result["ok"])
-        self.assertEqual(result["state"], "cool")
-        self.assertEqual(result["friendly_name"], "Downstairs Thermostat")
-        self.assertEqual(result["area_name"], "Living Room")
-        self.assertEqual(result["attributes"]["temperature"], 72)
+        self.assertEqual(result["count"], 1)
+        self.assertEqual(result["states"]["climate.downstairs"]["state"], "cool")
+        self.assertEqual(
+            result["states"]["climate.downstairs"]["friendly_name"],
+            "Downstairs Thermostat",
+        )
+        self.assertEqual(result["states"]["climate.downstairs"]["area_name"], "Living Room")
+        self.assertEqual(result["states"]["climate.downstairs"]["attributes"]["temperature"], 72)
 
-    def test_home_assistant_call_service_flattens_target_for_rest_api(self) -> None:
+    def test_home_assistant_get_state_supports_multiple_entities(self) -> None:
         registry = ToolRegistry(_settings())
         with patch(
-            "realtime.snowman_realtime.toolbox.home_assistant.home_assistant_request_json",
+            "realtime.snowman_realtime.toolbox.home_assistant_get_state.fetch_state",
+            side_effect=[
+                {
+                    "entity_id": "light.dining_light",
+                    "state": "off",
+                    "attributes": {"friendly_name": "Dining Light"},
+                },
+                {
+                    "entity_id": "light.sideboard_lamp",
+                    "state": "on",
+                    "attributes": {"friendly_name": "Sideboard Lamp"},
+                },
+            ],
+        ), patch(
+            "realtime.snowman_realtime.toolbox.home_assistant_get_state.lookup_area_name",
+            side_effect=["Dining Area", "Dining Area"],
+        ):
+            result = json.loads(
+                registry.execute(
+                    "home_assistant_get_state",
+                    json.dumps({"entity_id": ["light.dining_light", "light.sideboard_lamp"]}),
+                )
+            )
+
+        self.assertEqual(result["count"], 2)
+        self.assertEqual(result["states"]["light.dining_light"]["state"], "off")
+        self.assertEqual(result["states"]["light.sideboard_lamp"]["state"], "on")
+        self.assertEqual(result["missing_entity_ids"], [])
+
+    def test_home_assistant_call_service_flattens_targets_for_rest_api(self) -> None:
+        registry = ToolRegistry(_settings())
+        with patch(
+            "realtime.snowman_realtime.toolbox.home_assistant_call_service.home_assistant_request_json",
             return_value=[
-                {"entity_id": "light.ceiling_1"},
-                {"entity_id": "light.floor_lamp"},
+                {
+                    "entity_id": "light.ceiling_1",
+                    "state": "off",
+                    "attributes": {"friendly_name": "Ceiling 1"},
+                },
+                {
+                    "entity_id": "light.floor_lamp",
+                    "state": "off",
+                    "attributes": {"friendly_name": "Floor Lamp"},
+                },
             ],
         ) as request_json:
             result = json.loads(
                 registry.execute(
-                    "home_assistant",
+                    "home_assistant_call_service",
                     json.dumps(
                         {
-                            "action": "call_service",
                             "domain": "light",
                             "service": "turn_off",
-                            "target": {"entity_id": ["light.ceiling_1", "light.floor_lamp"]},
+                            "entity_id": ["light.ceiling_1", "light.floor_lamp"],
                             "service_data": {"transition": 2},
                         }
                     ),
@@ -311,7 +358,8 @@ class HomeAssistantToolTests(unittest.TestCase):
             )
 
         self.assertTrue(result["ok"])
-        self.assertEqual(result["changed_entities"], ["light.ceiling_1", "light.floor_lamp"])
+        self.assertEqual(result["changed_entity_ids"], ["light.ceiling_1", "light.floor_lamp"])
+        self.assertTrue(result["results"]["light.ceiling_1"]["changed"])
         self.assertEqual(
             request_json.call_args.kwargs["body"],
             {
@@ -325,29 +373,28 @@ class HomeAssistantToolTests(unittest.TestCase):
 
         with self.assertRaisesRegex(
             RuntimeError,
-            "requires target.entity_id or target.area_id",
+            "requires entity_id or area_id",
         ):
             registry.execute(
-                "home_assistant",
+                "home_assistant_call_service",
                 json.dumps(
                     {
-                        "action": "call_service",
                         "domain": "light",
                         "service": "turn_off",
                     }
                 ),
             )
 
-    def test_home_assistant_rejects_invalid_action_value(self) -> None:
+    def test_home_assistant_get_state_rejects_invalid_entity_id_type(self) -> None:
         registry = ToolRegistry(_settings())
 
         with self.assertRaisesRegex(
             RuntimeError,
-            "action must be exactly 'get_state' or 'call_service'",
+            "entity_id must be a string or list of strings",
         ):
             registry.execute(
-                "home_assistant",
-                json.dumps({"action": "turn_off"}),
+                "home_assistant_get_state",
+                json.dumps({"entity_id": 123}),
             )
 
 
@@ -429,7 +476,7 @@ class HomeAssistantHelperTests(unittest.TestCase):
     def test_verify_and_sync_home_assistant_helper_returns_registry_status(self) -> None:
         body = {
             "tool_config": {
-                "home_assistant": {
+                "home_assistant_call_service": {
                     "ha_url": "http://ha.local:8123",
                 }
             },
@@ -439,7 +486,7 @@ class HomeAssistantHelperTests(unittest.TestCase):
             "realtime.snowman_realtime.config_ui._load_config",
             return_value={
                 "tool_config": {
-                    "home_assistant": {
+                    "home_assistant_call_service": {
                         "ha_url": "http://ha.local:8123",
                     }
                 },

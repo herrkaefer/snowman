@@ -45,21 +45,21 @@ def _execute(context: ToolContext, arguments: dict[str, Any]) -> dict[str, Any]:
     try:
         limit = int(raw_limit)
     except (TypeError, ValueError) as exc:
-        raise RuntimeError("home_assistant_entities limit must be an integer") from exc
+        raise RuntimeError("home_assistant_search_entities limit must be an integer") from exc
     if limit < 1 or limit > MAX_ENTITY_LIMIT:
         raise RuntimeError(
-            f"home_assistant_entities limit must be between 1 and {MAX_ENTITY_LIMIT}"
+            f"home_assistant_search_entities limit must be between 1 and {MAX_ENTITY_LIMIT}"
         )
 
     LOGGER.info(
-        "home_assistant_entities input: domain_filter=%r area=%r name=%r query=%r limit=%d",
+        "home_assistant_search_entities input: domain_filter=%r area=%r name=%r query=%r limit=%d",
         domain_filter,
         area,
         name,
         query,
         limit,
     )
-    entities = search_home_assistant_entities(
+    entities = search_home_assistant_search_entities(
         context.settings,
         domain_filter=domain_filter,
         area=area,
@@ -68,7 +68,7 @@ def _execute(context: ToolContext, arguments: dict[str, Any]) -> dict[str, Any]:
         limit=limit,
     )
     LOGGER.info(
-        "home_assistant_entities output: count=%d entity_ids=%s",
+        "home_assistant_search_entities output: count=%d entity_ids=%s",
         len(entities),
         [entity["entity_id"] for entity in entities],
     )
@@ -85,7 +85,7 @@ def _execute(context: ToolContext, arguments: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def search_home_assistant_entities(
+def search_home_assistant_search_entities(
     settings: Any,
     *,
     domain_filter: str = "",
@@ -334,13 +334,13 @@ def _looks_like_area_query(query_terms: tuple[str, ...]) -> bool:
 
 TOOL = ToolSpec(
     definition=ToolDefinition(
-        name="home_assistant_entities",
+        name="home_assistant_search_entities",
         description=(
             "Find likely Home Assistant entities when the user names a room or device naturally, such as living room lights, thermostat, scene, or media player. "
             "Prefer structured filters: use domain_filter for the HA domain, area for the room or area, and name for the device name. "
             "Use query only as a fallback when you cannot cleanly separate the room and device name. "
             "Do not pass the whole user utterance as query when you can extract structured fields. "
-            "Use this first when the exact entity_id is unknown, then use home_assistant to act on the chosen entity or entities."
+            "Use this first when the exact entity_id is unknown, then use home_assistant_get_state or home_assistant_call_service on the chosen entity or entities."
         ),
         parameters={
             "type": "object",

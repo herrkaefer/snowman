@@ -268,7 +268,7 @@ class ConfigStoreTests(unittest.TestCase):
                 "output_gain": "bad",
                 "cue_output_gain": "bad",
                 "tool_config": {
-                    "home_assistant": {
+                    "home_assistant_call_service": {
                         "ha_url": "ftp://invalid",
                     }
                 },
@@ -315,7 +315,7 @@ class ConfigStoreTests(unittest.TestCase):
                     "admin_password": "admin-pass",
                     "ha_access_token": "test-ha-token",
                     "tool_config": {
-                        "home_assistant": {
+                        "home_assistant_call_service": {
                             "ha_url": "http://homeassistant.local:8123",
                         },
                         "web_search": {
@@ -340,7 +340,7 @@ class ConfigStoreTests(unittest.TestCase):
         self.assertEqual(config_payload["cue_output_gain"], 0.78)
         self.assertEqual(config_payload["custom_wake_keyword_path"], "/tmp/custom.ppn")
         self.assertEqual(
-            config_payload["tool_config"]["home_assistant"]["ha_url"],
+            config_payload["tool_config"]["home_assistant_call_service"]["ha_url"],
             "http://homeassistant.local:8123",
         )
         self.assertEqual(config_payload["tool_config"]["web_search"]["model"], "gpt-4.1")
@@ -372,7 +372,7 @@ class ConfigStoreTests(unittest.TestCase):
                 "ha_access_token": "test-ha-token",
                 "admin_password": "",
                 "tool_config": {
-                    "home_assistant": {
+                    "home_assistant_call_service": {
                         "ha_url": "http://homeassistant.local:8123",
                     },
                     "web_search": {
@@ -392,10 +392,47 @@ class ConfigStoreTests(unittest.TestCase):
         self.assertTrue(payload["ha_access_token_configured"])
         self.assertEqual(payload["ha_access_token_masked"], "test...oken")
         self.assertEqual(
-            payload["tool_config"]["home_assistant"]["ha_url"],
+            payload["tool_config"]["home_assistant_call_service"]["ha_url"],
             "http://homeassistant.local:8123",
         )
         self.assertEqual(payload["tool_config"]["web_search"]["model"], "gpt-4.1")
+
+    def test_load_config_values_migrates_legacy_home_assistant_tool_config(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = Path(temp_dir)
+            data_dir.joinpath("config.json").write_text(
+                json.dumps(
+                    {
+                        "agent_name": "Snowman",
+                        "provider": "openai",
+                        "openai_realtime_model": "gpt-realtime",
+                        "openai_voice": "alloy",
+                        "tool_config": {
+                            "home_assistant": {
+                                "ha_url": "http://homeassistant.local:8123",
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            data_dir.joinpath("secrets.json").write_text(
+                json.dumps(
+                    {
+                        "openai_api_key": "saved-openai",
+                        "porcupine_access_key": "saved-porcupine",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch.dict(os.environ, {"SNOWMAN_DATA_DIR": temp_dir}, clear=False):
+                config_values = load_config_values(default_system_prompt=DEFAULT_SYSTEM_PROMPT)
+
+        self.assertEqual(
+            config_values["tool_config"]["home_assistant_call_service"]["ha_url"],
+            "http://homeassistant.local:8123",
+        )
 
     def test_config_updates_from_legacy_env_parses_advanced_values(self) -> None:
         updates = config_updates_from_legacy_env(
