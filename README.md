@@ -97,9 +97,12 @@ It is designed to run on the Raspberry Pi hardware that is already connected and
 
 - `identity.md` defines who the agent is: role, tone, behavior rules, perception limits, and response style.
 - `memory` defines what the agent remembers: persistent user and household context, currently centered on profile memory plus a generated memory index.
+- Recent conversation memory is also persisted separately as compact per-session summaries in `recent_sessions.jsonl`, surfaced in the Config UI `Conversations` tab, and retrievable at runtime through `recent_conversation_search`.
 - Identity and memory are stored as persistent data files instead of being embedded directly in runtime config.
 - Realtime tools are split into a shared registry layer and per-tool implementations in `toolbox/`.
 - Tools can now expose administrator-facing configurable parameters in the UI, separate from agent-call arguments.
+- Home Assistant integration now uses three explicit tools: `home_assistant_search_entities`, `home_assistant_get_state`, and `home_assistant_call_service`.
+- The Config UI can also verify Home Assistant credentials and sync area/device/entity registry data into a local cache for more stable entity discovery.
 - The current profile-memory system is whole-document based, with manual baseline restore for recovery.
 
 ### First Install and Configuration On Pi

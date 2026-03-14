@@ -16,6 +16,7 @@ Current memory files:
 - `profile.md`: editable long-lived profile memory
 - `MEMORY.md`: generated memory index injected into the runtime prompt
 - `profile.baseline.md`: manual restore point for profile recovery
+- `recent_sessions.jsonl`: compact recent conversation summaries, newest sessions available in the Config UI `Conversations` tab and to the runtime `recent_conversation_search` tool
 
 ## Recent Updates
 
@@ -24,6 +25,8 @@ Current memory files:
 - The Raspberry Pi install directory is now `~/snowman-realtime` instead of `~/voice-assistant-realtime`.
 - The `Tools` tab now supports tool-specific configuration.
 - `web_search` is the first configurable tool and now stores its model under `tool_config.web_search.model` in `data/config.json`.
+- Home Assistant now uses explicit tools for search, get-state, and call-service, with HA URL stored in tool config and the access token stored in `data/secrets.json`.
+- The Config UI `Tools` tab can `Verify & Sync` Home Assistant and cache area/device/entity registry data under `data/home_assistant/registry_snapshot.json`.
 
 ## Goals
 
@@ -158,8 +161,14 @@ To make that mode fully automated for connection testing, also enable synthetic 
 - Each Realtime session and each response now receive dynamic prompt context with the current local date/time on the Raspberry Pi.
 - Optional fixed Raspberry Pi location can also be injected into the runtime prompt for local-context questions such as weather, nearby places, and commute.
 - For current or changing facts such as officeholders, news, weather, prices, laws, schedules, and anything phrased as current/latest/today/now/recent, the assistant is instructed to call `web_search` before answering instead of relying on memory.
+- For recent cross-session recall such as what was discussed earlier, recently, or about a prior topic, the assistant is instructed to call `recent_conversation_search` instead of guessing from profile memory.
+- Recent conversation summaries are written automatically after each completed session and retained in `recent_sessions.jsonl` with newest-first display in the Config UI.
 - Ordinary date/time questions can usually be answered directly from the injected current timestamp; `local_time` remains available as a fallback for precise current-time checks in longer sessions.
 - When location is configured, the same city/region/country/timezone is also passed to `web_search` as approximate user location.
+- For Home Assistant requests, the assistant is instructed to:
+  - use `home_assistant_search_entities` to discover likely entities
+  - use `home_assistant_get_state` for current state reads
+  - use `home_assistant_call_service` for actions with explicit `domain`, `service`, and `entity_id` / `area_id`
 
 Common multi-turn settings in Advanced JSON:
 
