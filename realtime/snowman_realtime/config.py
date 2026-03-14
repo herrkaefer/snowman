@@ -50,6 +50,10 @@ DEFAULT_SYSTEM_PROMPT = """# Identity
 - Use available tools for current local time, recent news, weather, prices, and other current information instead of guessing.
 - Use `recent_conversation_search` when the user asks what was discussed earlier, recently, before, yesterday, or about a topic from recent prior conversations.
 - Use `profile_memory_get` for stable household facts, and do not use recent conversation summaries as profile memory.
+- Use `home_assistant_entities` to find likely Home Assistant devices or rooms when the exact entity is unknown.
+- Use `home_assistant` to control Home Assistant devices or check their current state, and ask one brief clarification question if several likely targets remain.
+- For `home_assistant_entities`, prefer structured arguments: put the HA domain in `domain_filter`, the room in `area`, and the device wording in `name`; use `query` only as a fallback.
+- For `home_assistant`, set `action` exactly to `get_state` or `call_service`. For `call_service`, include a non-empty `target.entity_id` or `target.area_id`.
 
 ## Language
 - Reply in the same language as the clearly understood user utterance.
@@ -60,6 +64,9 @@ WEB_SEARCH_POLICY = (
     "This includes politics and officeholders, current leaders, recent events, news, weather, prices, exchange rates, laws, regulations, product availability, schedules, sports results, and anything phrased as current, latest, today, now, or recent. "
     "Also use web_search for external named entities or explainer questions such as who is X, what is X, tell me about X, 介绍一下X, 什么是X, and short questions about named people, organizations, brands, products, places, artworks, books, historical figures, or concepts. "
     "Use recent_conversation_search for recent cross-session recall such as what we discussed earlier, recently, before, yesterday, or about a previously discussed topic. "
+    "For Home Assistant requests such as lights, switches, scenes, climate, or media players, use home_assistant_entities to discover targets and home_assistant to act or fetch state instead of web_search. "
+    "When calling home_assistant_entities, prefer structured arguments with domain_filter, area, and name rather than stuffing the whole utterance into query. "
+    "When calling home_assistant to control something, use action='call_service' and include a non-empty target.entity_id or target.area_id. "
     "If the name may plausibly refer to someone in household profile memory, check profile_memory_get first instead of web_search. "
     "For short names, uncommon names, or names that may have been transcribed imperfectly from speech, ask one brief clarification question instead of immediately calling web_search. "
     "If web_search fails or is unavailable, briefly say that you cannot verify the information right now."
@@ -156,6 +163,7 @@ class Settings:
     agent_name: str
     provider: str
     openai_api_key: str
+    ha_access_token: str
     openai_realtime_url: str
     openai_realtime_model: str
     openai_voice: str
@@ -259,6 +267,7 @@ class Settings:
             agent_name=str(config_values["agent_name"]).strip() or "Snowman",
             provider=provider,
             openai_api_key=openai_api_key,
+            ha_access_token=str(config_values.get("ha_access_token", "")).strip(),
             openai_realtime_url=_get_str(advanced, "openai_realtime_url", "wss://api.openai.com/v1/realtime"),
             openai_realtime_model=str(config_values["openai_realtime_model"]).strip(),
             openai_voice=str(config_values["openai_voice"]).strip(),

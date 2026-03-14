@@ -6,6 +6,7 @@ import re
 import shlex
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlparse
 from zoneinfo import available_timezones
 
 from .country_data import COUNTRY_OPTIONS
@@ -58,6 +59,7 @@ LEGACY_SECRET_ENV_TO_CONFIG_KEY = {
     "OPENAI_API_KEY": "openai_api_key",
     "PORCUPINE_ACCESS_KEY": "porcupine_access_key",
     "ADMIN_PASSWORD": "admin_password",
+    "HA_ACCESS_TOKEN": "ha_access_token",
 }
 
 REQUIRED_FIELD_ERRORS = {
@@ -201,6 +203,7 @@ def default_config_values(*, default_system_prompt: str) -> dict[str, object]:
         "openai_api_key": "",
         "porcupine_access_key": "",
         "admin_password": "",
+        "ha_access_token": "",
         "tool_config": _normalized_tool_config({}),
         "advanced": dict(DEFAULT_ADVANCED_CONFIG),
     }
@@ -309,6 +312,7 @@ def materialize_config_values(
         "openai_api_key": secret_payload.get("openai_api_key", "").strip(),
         "porcupine_access_key": secret_payload.get("porcupine_access_key", "").strip(),
         "admin_password": secret_payload.get("admin_password", "").strip(),
+        "ha_access_token": secret_payload.get("ha_access_token", "").strip(),
         "tool_config": tool_config,
         "advanced": advanced,
     }
@@ -322,7 +326,7 @@ def merge_config_values(current: dict[str, object], updates: dict[str, object]) 
     merged["tool_config"] = json.loads(json.dumps(current_tool_config)) if isinstance(current_tool_config, dict) else {}
 
     for key, value in updates.items():
-        if key in {"openai_api_key", "porcupine_access_key", "admin_password"}:
+        if key in {"openai_api_key", "porcupine_access_key", "admin_password", "ha_access_token"}:
             if isinstance(value, str):
                 stripped = value.strip()
                 if stripped:
@@ -443,6 +447,16 @@ def validate_config_values(payload: dict[str, object]) -> list[str]:
                         + ", ".join(allowed_models)
                         + "."
                     )
+        home_assistant_config = tool_config.get("home_assistant", {})
+        if home_assistant_config is not None:
+            if not isinstance(home_assistant_config, dict):
+                errors.append("home_assistant tool config must be an object.")
+            else:
+                ha_url = str(home_assistant_config.get("ha_url", "")).strip()
+                if ha_url:
+                    parsed_ha_url = urlparse(ha_url)
+                    if parsed_ha_url.scheme not in {"http", "https"} or not parsed_ha_url.netloc:
+                        errors.append("Home Assistant URL must be a valid http:// or https:// URL.")
 
     try:
         wake_word_sensitivity = float(payload.get("wake_word_sensitivity", 0.5))
@@ -489,6 +503,7 @@ def config_values_for_api(payload: dict[str, object]) -> dict[str, object]:
     advanced = payload.get("advanced", {})
     openai_api_key = str(payload["openai_api_key"]).strip()
     porcupine_access_key = str(payload["porcupine_access_key"]).strip()
+    ha_access_token = str(payload.get("ha_access_token", "")).strip()
     return {
         "agent_name": payload["agent_name"],
         "provider": payload["provider"],
@@ -508,12 +523,15 @@ def config_values_for_api(payload: dict[str, object]) -> dict[str, object]:
         "location_timezone": payload["location_timezone"],
         "openai_api_key": "",
         "porcupine_access_key": "",
+        "ha_access_token": "",
         "custom_wake_keyword_name": Path(str(payload["custom_wake_keyword_path"]).strip()).name,
         "custom_wake_keyword_configured": bool(str(payload["custom_wake_keyword_path"]).strip()),
         "openai_api_key_configured": bool(openai_api_key),
         "porcupine_access_key_configured": bool(porcupine_access_key),
+        "ha_access_token_configured": bool(ha_access_token),
         "openai_api_key_masked": _mask_secret(openai_api_key),
         "porcupine_access_key_masked": _mask_secret(porcupine_access_key),
+        "ha_access_token_masked": _mask_secret(ha_access_token),
         "tool_config": _normalized_tool_config(payload.get("tool_config", {})),
         "provider_options": list(PROVIDER_OPTIONS),
         "openai_realtime_model_options": list(OPENAI_REALTIME_MODEL_OPTIONS),
@@ -559,6 +577,7 @@ def write_config_files(paths: ConfigPaths, payload: dict[str, object]) -> None:
     secrets_payload = {
         "openai_api_key": str(payload["openai_api_key"]).strip(),
         "porcupine_access_key": str(payload["porcupine_access_key"]).strip(),
+        "ha_access_token": str(payload.get("ha_access_token", "")).strip(),
     }
     admin_password = str(payload.get("admin_password", "")).strip()
     if admin_password:

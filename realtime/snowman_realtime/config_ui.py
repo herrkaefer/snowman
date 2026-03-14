@@ -22,6 +22,7 @@ from .config import DEFAULT_SYSTEM_PROMPT
 from .config_store import (
     DEFAULT_MEMORY_DIR,
     ConfigPaths,
+    _mask_secret,
     config_values_for_api,
     load_config_values,
     merge_config_values,
@@ -760,6 +761,7 @@ HTML_PAGE = """<!doctype html>
         location_region: $("location_region").value,
         location_country_code: $("location_country_code").value,
         location_timezone: $("location_timezone").value,
+        ha_access_token: $("ha_access_token") ? $("ha_access_token").value : "",
         tool_config: collectToolConfig(),
         advanced
       };
@@ -791,6 +793,14 @@ HTML_PAGE = """<!doctype html>
       $("advanced_json").value = JSON.stringify(config.advanced || {}, null, 2);
       $("openai_api_key").value = "";
       $("porcupine_access_key").value = "";
+      if ($("ha_access_token")) {
+        $("ha_access_token").value = "";
+        setSecretState(
+          "ha_access_token",
+          config.ha_access_token_configured,
+          config.ha_access_token_masked || ""
+        );
+      }
       $("wake_word_model").value = "";
       setTestResult("test_microphone_result", "");
       setTestResult("test_speaker_result", "");
@@ -849,6 +859,28 @@ HTML_PAGE = """<!doctype html>
       `;
     }
 
+    function renderToolSecretField(tool, field) {
+      const fieldId = field.key;
+      const configured = Boolean(field.configured);
+      const maskedValue = escapeHtml(field.masked || "");
+      const stateClass = configured ? "saved" : "missing";
+      const stateText = configured ? "Saved" : "Missing";
+      const hintText = configured
+        ? `Saved key: ${maskedValue}. Leave blank to keep it.`
+        : "No key saved yet.";
+      return `
+        <div class="tool-field">
+          <div class="field-head">
+            <label for="${fieldId}">${escapeHtml(field.label)}</label>
+            <div id="${fieldId}_state" class="secret-state ${stateClass}">${stateText}</div>
+          </div>
+          <input id="${fieldId}" type="text" autocomplete="off" spellcheck="false" placeholder="${escapeHtml(field.placeholder || "Enter a new value or leave blank to keep the current one")}">
+          <div id="${fieldId}_hint" class="hint">${hintText}</div>
+          <div class="hint">${escapeHtml(field.description || "")}</div>
+        </div>
+      `;
+    }
+
     function collectToolConfig() {
       const nodes = Array.from(document.querySelectorAll("[data-tool-name][data-tool-config-key]"));
       const toolConfig = {};
@@ -878,6 +910,11 @@ HTML_PAGE = """<!doctype html>
           <div class="tool-item">
             <h3>${escapeHtml(tool.name)}</h3>
             <p>${escapeHtml(tool.description)}</p>
+            ${
+              Array.isArray(tool.secret_fields) && tool.secret_fields.length
+                ? `<div class="tool-fields">${tool.secret_fields.map((field) => renderToolSecretField(tool, field)).join("")}</div>`
+                : ""
+            }
             ${
               Array.isArray(tool.config_fields) && tool.config_fields.length
                 ? `<div class="tool-fields">${tool.config_fields.map((field) => renderToolField(tool, field)).join("")}</div>`
@@ -1662,11 +1699,25 @@ def _tool_payload_for_api(config_payload: dict[str, object]) -> list[dict[str, o
     advanced = config_payload.get("advanced", {})
     memory_enabled = bool(advanced.get("memory_enabled", False)) if isinstance(advanced, dict) else False
     tool_config = config_payload.get("tool_config", {})
-    return build_tool_ui_payload(
+    payload = build_tool_ui_payload(
         memory_enabled=memory_enabled,
         tool_config=tool_config if isinstance(tool_config, dict) else {},
     )
-
+    ha_access_token = str(config_payload.get("ha_access_token", "")).strip()
+    for item in payload:
+        if item.get("name") != "home_assistant":
+            continue
+        item["secret_fields"] = [
+            {
+                "key": "ha_access_token",
+                "label": "HA Access Token",
+                "description": "Long-lived Home Assistant access token. Stored in secrets.json, not config.json.",
+                "configured": bool(ha_access_token),
+                "masked": _mask_secret(ha_access_token),
+                "placeholder": "Enter a new token or leave blank to keep the current one",
+            }
+        ]
+    return payload
 
 def _memory_store_for_config(config_payload: dict[str, object]) -> MemoryStore:
     advanced = config_payload.get("advanced", {})

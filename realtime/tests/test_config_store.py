@@ -51,6 +51,7 @@ class ConfigStoreTests(unittest.TestCase):
                     {
                         "openai_api_key": "saved-openai",
                         "porcupine_access_key": "saved-porcupine",
+                        "ha_access_token": "saved-ha",
                     }
                 ),
                 encoding="utf-8",
@@ -73,6 +74,7 @@ class ConfigStoreTests(unittest.TestCase):
         self.assertEqual(config_values["custom_wake_keyword_path"], "/tmp/custom.ppn")
         self.assertEqual(config_values["openai_api_key"], "saved-openai")
         self.assertEqual(config_values["porcupine_access_key"], "saved-porcupine")
+        self.assertEqual(config_values["ha_access_token"], "saved-ha")
         self.assertEqual(config_values["location_city"], "Chicago")
         self.assertEqual(config_values["tool_config"], build_default_tool_config())
         self.assertEqual(config_values["advanced"]["recent_conversation_compact_model"], "gpt-4o-mini")
@@ -174,11 +176,13 @@ class ConfigStoreTests(unittest.TestCase):
                 "openai_api_key": "existing-openai",
                 "porcupine_access_key": "existing-porcupine",
                 "admin_password": "existing-admin",
+                "ha_access_token": "existing-ha",
                 "advanced": {},
             },
             {
                 "openai_api_key": "   ",
                 "porcupine_access_key": "",
+                "ha_access_token": " ",
                 "agent_name": "Juniper",
                 "openai_realtime_model": "gpt-realtime-mini",
                 "system_prompt": "Updated prompt",
@@ -193,6 +197,7 @@ class ConfigStoreTests(unittest.TestCase):
         self.assertEqual(merged["openai_realtime_model"], "gpt-realtime-mini")
         self.assertEqual(merged["openai_api_key"], "existing-openai")
         self.assertEqual(merged["porcupine_access_key"], "existing-porcupine")
+        self.assertEqual(merged["ha_access_token"], "existing-ha")
         self.assertEqual(merged["system_prompt"], "Updated prompt")
         self.assertEqual(merged["location_street"], "W Belmont Ave")
         self.assertEqual(merged["wake_word_sensitivity"], 0.7)
@@ -262,6 +267,11 @@ class ConfigStoreTests(unittest.TestCase):
                 "wake_word_sensitivity": 2,
                 "output_gain": "bad",
                 "cue_output_gain": "bad",
+                "tool_config": {
+                    "home_assistant": {
+                        "ha_url": "ftp://invalid",
+                    }
+                },
                 "advanced": {},
             }
         )
@@ -272,6 +282,7 @@ class ConfigStoreTests(unittest.TestCase):
         self.assertIn("Wake word sensitivity must be between 0.0 and 1.0.", errors)
         self.assertIn("Output gain must be a number.", errors)
         self.assertIn("Cue gain must be a number.", errors)
+        self.assertIn("Home Assistant URL must be a valid http:// or https:// URL.", errors)
         self.assertIn("provider", missing_required_fields({"provider": "gemini"}))
 
     def test_write_config_files_persists_json_and_secrets(self) -> None:
@@ -302,7 +313,11 @@ class ConfigStoreTests(unittest.TestCase):
                     "openai_api_key": "test-openai",
                     "porcupine_access_key": "test-porcupine",
                     "admin_password": "admin-pass",
+                    "ha_access_token": "test-ha-token",
                     "tool_config": {
+                        "home_assistant": {
+                            "ha_url": "http://homeassistant.local:8123",
+                        },
                         "web_search": {
                             "model": "gpt-4.1",
                         }
@@ -324,10 +339,16 @@ class ConfigStoreTests(unittest.TestCase):
         self.assertEqual(config_payload["output_gain"], 0.35)
         self.assertEqual(config_payload["cue_output_gain"], 0.78)
         self.assertEqual(config_payload["custom_wake_keyword_path"], "/tmp/custom.ppn")
+        self.assertEqual(
+            config_payload["tool_config"]["home_assistant"]["ha_url"],
+            "http://homeassistant.local:8123",
+        )
         self.assertEqual(config_payload["tool_config"]["web_search"]["model"], "gpt-4.1")
         self.assertEqual(identity_markdown, "Prompt\n")
         self.assertEqual(secrets_payload["openai_api_key"], "test-openai")
         self.assertEqual(secrets_payload["admin_password"], "admin-pass")
+        self.assertEqual(secrets_payload["ha_access_token"], "test-ha-token")
+        self.assertNotIn("ha_access_token", config_payload)
 
     def test_config_values_for_api_exposes_audio_device_settings(self) -> None:
         payload = config_values_for_api(
@@ -348,8 +369,12 @@ class ConfigStoreTests(unittest.TestCase):
                 "location_timezone": "America/Chicago",
                 "openai_api_key": "test-openai",
                 "porcupine_access_key": "test-porcupine",
+                "ha_access_token": "test-ha-token",
                 "admin_password": "",
                 "tool_config": {
+                    "home_assistant": {
+                        "ha_url": "http://homeassistant.local:8123",
+                    },
                     "web_search": {
                         "model": "gpt-4.1",
                     }
@@ -363,6 +388,13 @@ class ConfigStoreTests(unittest.TestCase):
 
         self.assertEqual(payload["audio_device_index"], 4)
         self.assertEqual(payload["playback_device"], "plughw:2,0")
+        self.assertEqual(payload["ha_access_token"], "")
+        self.assertTrue(payload["ha_access_token_configured"])
+        self.assertEqual(payload["ha_access_token_masked"], "test...oken")
+        self.assertEqual(
+            payload["tool_config"]["home_assistant"]["ha_url"],
+            "http://homeassistant.local:8123",
+        )
         self.assertEqual(payload["tool_config"]["web_search"]["model"], "gpt-4.1")
 
     def test_config_updates_from_legacy_env_parses_advanced_values(self) -> None:
@@ -440,6 +472,7 @@ class SettingsConfigTests(unittest.TestCase):
                     {
                         "openai_api_key": "saved-openai",
                         "porcupine_access_key": "saved-porcupine",
+                        "ha_access_token": "saved-ha",
                     }
                 ),
                 encoding="utf-8",
@@ -460,6 +493,7 @@ class SettingsConfigTests(unittest.TestCase):
         self.assertEqual(settings.output_gain, 0.35)
         self.assertEqual(settings.cue_output_gain, 0.78)
         self.assertEqual(settings.openai_api_key, "saved-openai")
+        self.assertEqual(settings.ha_access_token, "saved-ha")
         self.assertEqual(settings.porcupine_access_key, "saved-porcupine")
 
 
