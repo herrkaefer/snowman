@@ -1,15 +1,26 @@
 from __future__ import annotations
 
 import json
+import tempfile
 import unittest
 from io import BytesIO
+from pathlib import Path
 from types import SimpleNamespace
 from urllib.error import HTTPError
 from unittest.mock import patch
 
 from realtime.snowman_realtime.config import build_session_instructions
-from realtime.snowman_realtime.config_ui import _tool_payload_for_api
+from realtime.snowman_realtime.config_store import ConfigPaths
+from realtime.snowman_realtime.config_ui import (
+    _tool_payload_for_api,
+    _verify_and_sync_home_assistant,
+)
 from realtime.snowman_realtime.toolbox._ha_helpers import home_assistant_request_json
+from realtime.snowman_realtime.toolbox._ha_registry_cache import (
+    load_registry_snapshot,
+    registry_snapshot_status,
+    verify_and_sync_registry_snapshot,
+)
 from realtime.snowman_realtime.tools import ToolRegistry, build_tool_definitions
 
 
@@ -25,6 +36,24 @@ class _FakeHTTPResponse:
 
     def __exit__(self, exc_type, exc, tb) -> bool:
         return False
+
+
+class _FakeWebSocket:
+    def __init__(self, responses: list[dict[str, object]]) -> None:
+        self._responses = [json.dumps(item) for item in responses]
+        self.sent_messages: list[dict[str, object]] = []
+        self.closed = False
+
+    def recv(self) -> str:
+        if not self._responses:
+            raise AssertionError("No more websocket responses queued")
+        return self._responses.pop(0)
+
+    def send(self, message: str) -> None:
+        self.sent_messages.append(json.loads(message))
+
+    def close(self) -> None:
+        self.closed = True
 
 
 def _settings() -> SimpleNamespace:
@@ -174,6 +203,63 @@ class HomeAssistantToolTests(unittest.TestCase):
         self.assertEqual(result["count"], 1)
         self.assertEqual(result["entities"][0]["entity_id"], "light.foyer_light")
 
+    def test_home_assistant_entities_uses_registry_snapshot_area_mapping(self) -> None:
+        registry = ToolRegistry(_settings())
+        snapshot = {
+            "ha_url": "http://ha.local:8123",
+            "areas": [{"area_id": "area_dining", "name": "Dining Area"}],
+            "devices": [{"id": "device_sideboard", "area_id": "area_dining"}],
+            "entities": [
+                {
+                    "entity_id": "light.sideboard_lamp",
+                    "device_id": "device_sideboard",
+                    "area_id": None,
+                    "disabled_by": None,
+                    "hidden_by": None,
+                    "name": "Sideboard Lamp",
+                },
+                {
+                    "entity_id": "light.kitchen_light",
+                    "device_id": "",
+                    "area_id": "",
+                    "disabled_by": None,
+                    "hidden_by": None,
+                    "name": "Kitchen Light",
+                },
+            ],
+        }
+        with patch(
+            "realtime.snowman_realtime.toolbox.home_assistant_entities.load_registry_snapshot",
+            return_value=snapshot,
+        ), patch(
+            "realtime.snowman_realtime.toolbox.home_assistant_entities.fetch_states",
+            return_value=[
+                {
+                    "entity_id": "light.sideboard_lamp",
+                    "state": "off",
+                    "attributes": {"friendly_name": "Sideboard Lamp"},
+                },
+                {
+                    "entity_id": "light.kitchen_light",
+                    "state": "off",
+                    "attributes": {"friendly_name": "Kitchen Light"},
+                },
+            ],
+        ), patch(
+            "realtime.snowman_realtime.toolbox.home_assistant_entities.lookup_area_name",
+            side_effect=AssertionError("lookup_area_name should not be used when registry snapshot exists"),
+        ):
+            result = json.loads(
+                registry.execute(
+                    "home_assistant_entities",
+                    json.dumps({"domain_filter": "light", "area": "餐厅", "name": "灯", "limit": 5}, ensure_ascii=False),
+                )
+            )
+
+        self.assertEqual(result["count"], 1)
+        self.assertEqual(result["entities"][0]["entity_id"], "light.sideboard_lamp")
+        self.assertEqual(result["entities"][0]["area_name"], "Dining Area")
+
     def test_home_assistant_get_state_returns_compact_state(self) -> None:
         registry = ToolRegistry(_settings())
         with patch(
@@ -294,6 +380,94 @@ class HomeAssistantHelperTests(unittest.TestCase):
             payload = home_assistant_request_json(settings, method="GET", path="/api/states")
 
         self.assertEqual(payload, {"ok": True})
+
+    def test_verify_and_sync_registry_snapshot_writes_snapshot(self) -> None:
+        settings = _settings()
+        fake_socket = _FakeWebSocket(
+            [
+                {"type": "auth_required"},
+                {"type": "auth_ok"},
+                {"id": 1, "type": "result", "success": True, "result": {"location_name": "Home"}},
+                {"id": 2, "type": "result", "success": True, "result": [{"area_id": "area_1", "name": "Living Room"}]},
+                {"id": 3, "type": "result", "success": True, "result": [{"id": "device_1", "area_id": "area_1"}]},
+                {
+                    "id": 4,
+                    "type": "result",
+                    "success": True,
+                    "result": [{"entity_id": "light.living_room_ceiling", "device_id": "device_1"}],
+                },
+            ]
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            with patch(
+                "realtime.snowman_realtime.toolbox._ha_registry_cache.resolve_config_paths",
+                return_value=ConfigPaths(
+                    data_dir=temp_path,
+                    config_path=temp_path / "config.json",
+                    secrets_path=temp_path / "secrets.json",
+                    identity_path=temp_path / "identity.md",
+                ),
+            ), patch(
+                "realtime.snowman_realtime.toolbox._ha_registry_cache.websocket.create_connection",
+                return_value=fake_socket,
+            ):
+                snapshot = verify_and_sync_registry_snapshot(settings)
+                saved = load_registry_snapshot(settings)
+                status = registry_snapshot_status(settings)
+
+        self.assertEqual(snapshot["areas"][0]["name"], "Living Room")
+        self.assertIsNotNone(saved)
+        assert saved is not None
+        self.assertEqual(saved["entities"][0]["entity_id"], "light.living_room_ceiling")
+        self.assertTrue(status["exists"])
+        self.assertEqual(status["counts"]["entities"], 1)
+        self.assertTrue(fake_socket.closed)
+        self.assertEqual(fake_socket.sent_messages[0]["type"], "auth")
+        self.assertEqual(fake_socket.sent_messages[1]["type"], "get_config")
+
+    def test_verify_and_sync_home_assistant_helper_returns_registry_status(self) -> None:
+        body = {
+            "tool_config": {
+                "home_assistant": {
+                    "ha_url": "http://ha.local:8123",
+                }
+            },
+            "ha_access_token": "",
+        }
+        with patch(
+            "realtime.snowman_realtime.config_ui._load_config",
+            return_value={
+                "tool_config": {
+                    "home_assistant": {
+                        "ha_url": "http://ha.local:8123",
+                    }
+                },
+                "ha_access_token": "saved-token",
+            },
+        ), patch(
+            "realtime.snowman_realtime.config_ui.verify_and_sync_registry_snapshot",
+            return_value={
+                "areas": [{"area_id": "area_1"}],
+                "devices": [{"id": "device_1"}],
+                "entities": [{"entity_id": "light.test"}],
+            },
+        ), patch(
+            "realtime.snowman_realtime.config_ui.registry_snapshot_status",
+            return_value={
+                "exists": True,
+                "fetched_at": "2026-03-13T12:00:00Z",
+                "counts": {"areas": 1, "devices": 1, "entities": 1},
+                "matches_current_url": True,
+                "path": "/tmp/registry_snapshot.json",
+                "ha_url": "http://ha.local:8123",
+                "configured_ha_url": "http://ha.local:8123",
+            },
+        ):
+            payload = _verify_and_sync_home_assistant(body)
+
+        self.assertIn("Home Assistant verified.", payload["message"])
+        self.assertTrue(payload["registry_cache"]["exists"])
 
 
 if __name__ == "__main__":

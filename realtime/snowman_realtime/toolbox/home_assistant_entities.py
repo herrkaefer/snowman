@@ -4,6 +4,7 @@ import logging
 from typing import Any
 
 from ._ha_helpers import fetch_states, lookup_area_name, normalize_state_payload
+from ._ha_registry_cache import load_registry_snapshot
 from ..tools import ToolContext, ToolDefinition, ToolSpec
 
 
@@ -94,12 +95,22 @@ def search_home_assistant_entities(
     limit: int = DEFAULT_ENTITY_LIMIT,
 ) -> list[dict[str, Any]]:
     states = fetch_states(settings)
-    candidates = _normalize_entities(states, domain_filter=domain_filter)
+    snapshot = load_registry_snapshot(settings)
+    if snapshot is not None:
+        candidates = _normalize_entities_from_snapshot(
+            snapshot,
+            states,
+            domain_filter=domain_filter,
+        )
+    else:
+        candidates = _normalize_entities(states, domain_filter=domain_filter)
     area_terms = _expanded_terms(area, AREA_ALIASES)
     name_terms = _expanded_terms(name, NAME_ALIASES)
     query_terms = _expanded_terms(query, {**AREA_ALIASES, **NAME_ALIASES})
 
-    if area_terms or (not area_terms and not name_terms and _looks_like_area_query(query_terms)):
+    if snapshot is None and (
+        area_terms or (not area_terms and not name_terms and _looks_like_area_query(query_terms))
+    ):
         candidates = _enrich_area_names_if_needed(settings, candidates)
 
     if area_terms:
@@ -139,6 +150,67 @@ def search_home_assistant_entities(
         reverse=True,
     )
     return [entity for _, entity in scored_matches[:limit]]
+
+
+def _normalize_entities_from_snapshot(
+    snapshot: dict[str, Any],
+    states: list[dict[str, Any]],
+    *,
+    domain_filter: str,
+) -> list[dict[str, Any]]:
+    area_name_by_id = {
+        _string_value(item.get("area_id")): _string_value(item.get("name"))
+        for item in snapshot.get("areas", [])
+        if isinstance(item, dict) and _string_value(item.get("area_id"))
+    }
+    device_area_by_id = {
+        _string_value(item.get("id")): _string_value(item.get("area_id"))
+        for item in snapshot.get("devices", [])
+        if isinstance(item, dict) and _string_value(item.get("id"))
+    }
+    state_by_entity_id = {
+        _string_value(item.get("entity_id")): item
+        for item in states
+        if isinstance(item, dict) and _string_value(item.get("entity_id"))
+    }
+
+    normalized: list[dict[str, Any]] = []
+    for entry in snapshot.get("entities", []):
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("disabled_by") or entry.get("hidden_by"):
+            continue
+        entity_id = _string_value(entry.get("entity_id"))
+        if not entity_id:
+            continue
+        if domain_filter and not entity_id.startswith(domain_filter + "."):
+            continue
+        area_id = _string_value(entry.get("area_id"))
+        if not area_id:
+            device_id = _string_value(entry.get("device_id"))
+            area_id = device_area_by_id.get(device_id, "")
+        area_name = area_name_by_id.get(area_id, "").strip()
+        payload = state_by_entity_id.get(entity_id)
+        if payload is not None:
+            normalized.append(normalize_state_payload(payload, area_name=area_name))
+            continue
+        friendly_name = _string_value(entry.get("name")) or entity_id
+        normalized.append(
+            {
+                "entity_id": entity_id,
+                "friendly_name": friendly_name,
+                "state": "unknown",
+                "area_name": area_name,
+            }
+        )
+    normalized.sort(key=lambda entity: (entity["friendly_name"], entity["entity_id"]))
+    return normalized
+
+
+def _string_value(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()
 
 
 def _normalize_entities(

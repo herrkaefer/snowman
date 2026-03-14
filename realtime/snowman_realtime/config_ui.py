@@ -8,6 +8,7 @@ import subprocess
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import urlparse
 
 from .audio import (
@@ -32,6 +33,10 @@ from .config_store import (
     write_config_files,
 )
 from .memory import MemoryStore
+from .toolbox._ha_registry_cache import (
+    registry_snapshot_status,
+    verify_and_sync_registry_snapshot,
+)
 from .tools import build_tool_ui_payload
 from .version import VERSION
 
@@ -415,6 +420,17 @@ HTML_PAGE = """<!doctype html>
       margin-top: 14px;
       display: grid;
       gap: 10px;
+    }
+    .tool-action-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+    .tool-status {
+      min-height: 0;
+      margin-top: 0;
+      font-size: 0.84rem;
     }
     .conversation-list {
       display: grid;
@@ -903,6 +919,51 @@ HTML_PAGE = """<!doctype html>
       return toolConfig;
     }
 
+    function describeHaRegistryCache(cache) {
+      const data = cache && typeof cache === "object" ? cache : {};
+      const counts = data.counts && typeof data.counts === "object" ? data.counts : {};
+      if (!data.exists) {
+        return {
+          className: "panel warn tool-status",
+          text: "No Home Assistant registry snapshot synced yet."
+        };
+      }
+      const summary = `Synced ${counts.areas || 0} areas, ${counts.devices || 0} devices, ${counts.entities || 0} entities.`;
+      const fetched = data.fetched_at ? ` Last synced: ${data.fetched_at}.` : "";
+      if (data.matches_current_url === false && data.configured_ha_url) {
+        return {
+          className: "panel warn tool-status",
+          text: `${summary}${fetched} Snapshot URL does not match the current HA URL.`
+        };
+      }
+      return {
+        className: "panel good tool-status",
+        text: `${summary}${fetched}`
+      };
+    }
+
+    function renderHomeAssistantActions(tool) {
+      const status = describeHaRegistryCache(tool.registry_cache || {});
+      return `
+        <div class="tool-fields">
+          <div class="tool-action-row">
+            <button id="verify_home_assistant" class="secondary" type="button">Verify & Sync</button>
+          </div>
+          <div id="ha_registry_cache_status" class="${status.className}">${escapeHtml(status.text)}</div>
+        </div>
+      `;
+    }
+
+    function updateHomeAssistantRegistryStatus(cache) {
+      const node = $("ha_registry_cache_status");
+      if (!node) {
+        return;
+      }
+      const status = describeHaRegistryCache(cache);
+      node.className = status.className;
+      node.textContent = status.text;
+    }
+
     function renderTools(tools) {
       const items = Array.isArray(tools) ? tools : [];
       $("tools_list").innerHTML = items
@@ -920,6 +981,7 @@ HTML_PAGE = """<!doctype html>
                 ? `<div class="tool-fields">${tool.config_fields.map((field) => renderToolField(tool, field)).join("")}</div>`
                 : ""
             }
+            ${tool.name === "home_assistant" ? renderHomeAssistantActions(tool) : ""}
           </div>
         `)
         .join("");
@@ -1382,6 +1444,35 @@ HTML_PAGE = """<!doctype html>
       }
     }
 
+    async function verifyHomeAssistant() {
+      const button = $("verify_home_assistant");
+      if (!button) {
+        return;
+      }
+      const payload = payloadFromForm();
+      if (!payload) {
+        return;
+      }
+      try {
+        button.disabled = true;
+        setMessage("Verifying Home Assistant connection and syncing registry...");
+        const result = await readJson("/api/tools/home-assistant/verify", {
+          method: "POST",
+          body: JSON.stringify(payload)
+        });
+        updateHomeAssistantRegistryStatus(result.registry_cache || {});
+        setMessage(result.message || "Home Assistant registry synced.", "good");
+      } catch (error) {
+        updateHomeAssistantRegistryStatus({
+          exists: false,
+          configured_ha_url: (($("tool_config__home_assistant__ha_url") || {}).value || "").trim()
+        });
+        setMessage(error.message, "warn");
+      } finally {
+        button.disabled = false;
+      }
+    }
+
     function autoGrowPrompt() {
       const textarea = $("system_prompt");
       textarea.style.height = "auto";
@@ -1443,6 +1534,13 @@ HTML_PAGE = """<!doctype html>
     $("save_profile_baseline").addEventListener("click", saveProfileBaseline);
     $("restore_profile_baseline").addEventListener("click", restoreProfileBaseline);
     $("save_memory_index").addEventListener("click", saveMemoryIndex);
+    $("tools_list").addEventListener("click", (event) => {
+      const button = event.target.closest("#verify_home_assistant");
+      if (!button) {
+        return;
+      }
+      verifyHomeAssistant();
+    });
     $("conversation_list").addEventListener("click", (event) => {
       const button = event.target.closest("[data-delete-session-id]");
       if (!button) {
@@ -1555,6 +1653,14 @@ class ConfigUIHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/memory/recent-session/delete":
             try:
                 result = _delete_recent_session(_load_config(), body)
+            except RuntimeError as exc:
+                self._write_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
+            self._write_json(result)
+            return
+        if parsed.path == "/api/tools/home-assistant/verify":
+            try:
+                result = _verify_and_sync_home_assistant(body)
             except RuntimeError as exc:
                 self._write_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
                 return
@@ -1717,7 +1823,21 @@ def _tool_payload_for_api(config_payload: dict[str, object]) -> list[dict[str, o
                 "placeholder": "Enter a new token or leave blank to keep the current one",
             }
         ]
+        item["registry_cache"] = _home_assistant_registry_status_for_config(config_payload)
     return payload
+
+
+def _settings_namespace_for_config(config_payload: dict[str, object]) -> SimpleNamespace:
+    return SimpleNamespace(
+        tool_config=config_payload.get("tool_config", {}),
+        ha_access_token=str(config_payload.get("ha_access_token", "")).strip(),
+    )
+
+
+def _home_assistant_registry_status_for_config(
+    config_payload: dict[str, object],
+) -> dict[str, object]:
+    return registry_snapshot_status(_settings_namespace_for_config(config_payload))
 
 def _memory_store_for_config(config_payload: dict[str, object]) -> MemoryStore:
     advanced = config_payload.get("advanced", {})
@@ -1802,6 +1922,24 @@ def _delete_recent_session(
     if not deleted:
         raise RuntimeError(f"Recent conversation not found: {session_id}")
     return _memory_payload_for_api(config_payload)
+
+
+def _verify_and_sync_home_assistant(body: dict[str, object]) -> dict[str, object]:
+    merged = merge_config_values(_load_config(), body)
+    settings = _settings_namespace_for_config(merged)
+    snapshot = verify_and_sync_registry_snapshot(settings)
+    counts = {
+        "areas": len(snapshot.get("areas", [])) if isinstance(snapshot.get("areas"), list) else 0,
+        "devices": len(snapshot.get("devices", [])) if isinstance(snapshot.get("devices"), list) else 0,
+        "entities": len(snapshot.get("entities", [])) if isinstance(snapshot.get("entities"), list) else 0,
+    }
+    return {
+        "message": (
+            "Home Assistant verified. "
+            f"Synced {counts['areas']} areas, {counts['devices']} devices, {counts['entities']} entities."
+        ),
+        "registry_cache": registry_snapshot_status(settings),
+    }
 
 
 def _status_payload(
