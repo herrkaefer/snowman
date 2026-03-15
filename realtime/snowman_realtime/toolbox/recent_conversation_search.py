@@ -186,22 +186,31 @@ TOOL = ToolSpec(
         description=(
             "Load recent cross-session conversation summaries when the user asks what was discussed earlier, recently, before, yesterday, or about a topic from prior recent conversations. "
             "Use this for recent recall across sessions, not for stable household facts or current external information. "
-            "You may pass an ISO-8601 start_time and end_time to narrow the time window, and an optional query to filter by topic, entity, or summary text."
+            "For time-bounded requests such as today, yesterday, this morning, earlier today, 刚才, 今天, or 昨天, set start_time and end_time explicitly as ISO-8601 timestamps with timezone. "
+            "Use query to filter by content such as a topic, person, entity, or summary text, and combine it with start_time/end_time when the user asks about both time and topic."
         ),
         parameters={
             "type": "object",
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "Optional topic or entity filter matched against stored summaries, entities, and topics.",
+                    "description": "Optional content filter matched against stored summaries, entities, and topics, such as Mira, Spotify, dining light, or food preferences.",
                 },
                 "start_time": {
                     "type": "string",
-                    "description": "Optional inclusive ISO-8601 timestamp lower bound for recent session retrieval.",
+                    "description": (
+                        "Optional inclusive ISO-8601 timestamp lower bound for recent session retrieval. "
+                        "Set this explicitly for time-bounded requests such as today, yesterday, this morning, earlier today, 刚才, 今天, or 昨天. "
+                        "Example: 2026-03-15T00:00:00-05:00."
+                    ),
                 },
                 "end_time": {
                     "type": "string",
-                    "description": "Optional inclusive ISO-8601 timestamp upper bound for recent session retrieval.",
+                    "description": (
+                        "Optional inclusive ISO-8601 timestamp upper bound for recent session retrieval. "
+                        "Set this explicitly together with start_time for time-bounded requests such as today, yesterday, this morning, earlier today, 刚才, 今天, or 昨天. "
+                        "Example: 2026-03-15T23:59:59-05:00."
+                    ),
                 },
                 "limit": {
                     "type": "integer",

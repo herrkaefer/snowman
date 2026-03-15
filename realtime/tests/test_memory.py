@@ -204,6 +204,8 @@ class MemoryToolTests(unittest.TestCase):
         self.assertIn("external proper nouns", web_search.description)
         recent_search = next(definition for definition in definitions if definition.name == "recent_conversation_search")
         self.assertIn("what was discussed earlier", recent_search.description)
+        self.assertIn("set start_time and end_time explicitly", recent_search.description)
+        self.assertIn("今天", recent_search.description)
 
     def test_tool_registry_profile_get_and_update(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
