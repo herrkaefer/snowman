@@ -447,12 +447,14 @@ def validate_config_values(payload: dict[str, object]) -> list[str]:
                         + ", ".join(allowed_models)
                         + "."
                     )
-        home_assistant_config = tool_config.get("home_assistant_call_service")
+        home_assistant_config = tool_config.get("home_assistant_connect_and_sync")
+        if home_assistant_config is None and "home_assistant_call_service" in tool_config:
+            home_assistant_config = tool_config.get("home_assistant_call_service")
         if home_assistant_config is None and "home_assistant" in tool_config:
             home_assistant_config = tool_config.get("home_assistant")
         if home_assistant_config is not None:
             if not isinstance(home_assistant_config, dict):
-                errors.append("home_assistant_call_service tool config must be an object.")
+                errors.append("home_assistant_connect_and_sync tool config must be an object.")
             else:
                 ha_url = str(home_assistant_config.get("ha_url", "")).strip()
                 if ha_url:
@@ -653,23 +655,24 @@ def _normalized_tool_config(value: object) -> dict[str, dict[str, object]]:
     normalized = json.loads(json.dumps(_default_tool_config()))
     if not isinstance(value, dict):
         return normalized
-    legacy_home_assistant = value.get("home_assistant")
-    if (
-        "home_assistant_call_service" not in value
-        and isinstance(legacy_home_assistant, dict)
-    ):
-        normalized.setdefault("home_assistant_call_service", {}).update(
-            {
-                field_key: field_value.strip() if isinstance(field_value, str) else field_value
-                for field_key, field_value in legacy_home_assistant.items()
-                if isinstance(field_key, str)
-            }
-        )
+    if "home_assistant_connect_and_sync" not in value:
+        for legacy_key in ("home_assistant_call_service", "home_assistant"):
+            legacy_values = value.get(legacy_key)
+            if not isinstance(legacy_values, dict):
+                continue
+            normalized.setdefault("home_assistant_connect_and_sync", {}).update(
+                {
+                    field_key: field_value.strip() if isinstance(field_value, str) else field_value
+                    for field_key, field_value in legacy_values.items()
+                    if isinstance(field_key, str)
+                }
+            )
+            break
     for tool_name, tool_values in value.items():
         if not isinstance(tool_name, str) or not isinstance(tool_values, dict):
             continue
-        if tool_name == "home_assistant":
-            tool_name = "home_assistant_call_service"
+        if tool_name in {"home_assistant", "home_assistant_call_service"}:
+            tool_name = "home_assistant_connect_and_sync"
         existing = normalized.get(tool_name)
         if not isinstance(existing, dict):
             existing = {}

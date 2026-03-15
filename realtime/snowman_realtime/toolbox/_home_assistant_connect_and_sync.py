@@ -10,13 +10,32 @@ from urllib import parse
 import websocket
 
 from ..config_store import resolve_config_paths
-from ._ha_helpers import home_assistant_url, home_assistant_token
+from ..tools import ToolConfigField, ToolContext, ToolDefinition, ToolSpec
+from ._ha_helpers import home_assistant_token, home_assistant_url
 
 
 LOGGER = logging.getLogger(__name__)
 DEFAULT_HA_WEBSOCKET_TIMEOUT_SECONDS = 15
 SNAPSHOT_DIRNAME = "home_assistant"
 SNAPSHOT_FILENAME = "registry_snapshot.json"
+
+
+def _execute(context: ToolContext, arguments: dict[str, Any]) -> dict[str, Any]:
+    del arguments
+    snapshot = verify_and_sync_registry_snapshot(context.settings)
+    counts = {
+        "areas": len(snapshot.get("areas", [])) if isinstance(snapshot.get("areas"), list) else 0,
+        "devices": len(snapshot.get("devices", [])) if isinstance(snapshot.get("devices"), list) else 0,
+        "entities": len(snapshot.get("entities", [])) if isinstance(snapshot.get("entities"), list) else 0,
+    }
+    return {
+        "ok": True,
+        "message": (
+            "Home Assistant verified. "
+            f"Synced {counts['areas']} areas, {counts['devices']} devices, {counts['entities']} entities."
+        ),
+        "registry_cache": registry_snapshot_status(context.settings),
+    }
 
 
 def verify_and_sync_registry_snapshot(settings: Any) -> dict[str, Any]:
@@ -213,3 +232,28 @@ def _ensure_object_list(value: Any) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, dict)]
+
+
+TOOL = ToolSpec(
+    definition=ToolDefinition(
+        name="home_assistant_connect_and_sync",
+        description=(
+            "Verify Home Assistant credentials and sync area, device, and entity registry data into the local cache used for discovery."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        },
+    ),
+    execute=_execute,
+    config_fields=(
+        ToolConfigField(
+            key="ha_url",
+            label="HA URL",
+            field_type="text",
+            description="Base Home Assistant URL, for example http://homeassistant.local:8123.",
+            default="",
+        ),
+    ),
+)

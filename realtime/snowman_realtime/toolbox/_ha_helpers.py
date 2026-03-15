@@ -16,6 +16,7 @@ def home_assistant_url(settings: Any) -> str:
     home_assistant_config = {}
     if isinstance(tool_config, dict):
         for tool_name in (
+            "home_assistant_connect_and_sync",
             "home_assistant_call_service",
             "home_assistant_get_state",
             "home_assistant_search_entities",

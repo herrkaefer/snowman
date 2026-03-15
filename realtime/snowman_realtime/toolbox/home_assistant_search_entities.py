@@ -4,7 +4,7 @@ import logging
 from typing import Any
 
 from ._ha_helpers import fetch_states, lookup_area_name, normalize_state_payload
-from ._ha_registry_cache import load_registry_snapshot
+from ._home_assistant_connect_and_sync import load_registry_snapshot
 from ..tools import ToolContext, ToolDefinition, ToolSpec
 
 

@@ -268,7 +268,7 @@ class ConfigStoreTests(unittest.TestCase):
                 "output_gain": "bad",
                 "cue_output_gain": "bad",
                 "tool_config": {
-                    "home_assistant_call_service": {
+                    "home_assistant_connect_and_sync": {
                         "ha_url": "ftp://invalid",
                     }
                 },
@@ -315,7 +315,7 @@ class ConfigStoreTests(unittest.TestCase):
                     "admin_password": "admin-pass",
                     "ha_access_token": "test-ha-token",
                     "tool_config": {
-                        "home_assistant_call_service": {
+                        "home_assistant_connect_and_sync": {
                             "ha_url": "http://homeassistant.local:8123",
                         },
                         "web_search": {
@@ -340,7 +340,7 @@ class ConfigStoreTests(unittest.TestCase):
         self.assertEqual(config_payload["cue_output_gain"], 0.78)
         self.assertEqual(config_payload["custom_wake_keyword_path"], "/tmp/custom.ppn")
         self.assertEqual(
-            config_payload["tool_config"]["home_assistant_call_service"]["ha_url"],
+            config_payload["tool_config"]["home_assistant_connect_and_sync"]["ha_url"],
             "http://homeassistant.local:8123",
         )
         self.assertEqual(config_payload["tool_config"]["web_search"]["model"], "gpt-4.1")
@@ -372,7 +372,7 @@ class ConfigStoreTests(unittest.TestCase):
                 "ha_access_token": "test-ha-token",
                 "admin_password": "",
                 "tool_config": {
-                    "home_assistant_call_service": {
+                    "home_assistant_connect_and_sync": {
                         "ha_url": "http://homeassistant.local:8123",
                     },
                     "web_search": {
@@ -392,7 +392,7 @@ class ConfigStoreTests(unittest.TestCase):
         self.assertTrue(payload["ha_access_token_configured"])
         self.assertEqual(payload["ha_access_token_masked"], "test...oken")
         self.assertEqual(
-            payload["tool_config"]["home_assistant_call_service"]["ha_url"],
+            payload["tool_config"]["home_assistant_connect_and_sync"]["ha_url"],
             "http://homeassistant.local:8123",
         )
         self.assertEqual(payload["tool_config"]["web_search"]["model"], "gpt-4.1")
@@ -430,7 +430,7 @@ class ConfigStoreTests(unittest.TestCase):
                 config_values = load_config_values(default_system_prompt=DEFAULT_SYSTEM_PROMPT)
 
         self.assertEqual(
-            config_values["tool_config"]["home_assistant_call_service"]["ha_url"],
+            config_values["tool_config"]["home_assistant_connect_and_sync"]["ha_url"],
             "http://homeassistant.local:8123",
         )
 

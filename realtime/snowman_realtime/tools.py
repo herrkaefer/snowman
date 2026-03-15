@@ -57,15 +57,20 @@ class ToolConfigField:
     options: tuple[dict[str, str], ...] = ()
 
 
-@lru_cache(maxsize=1)
-def discover_tool_specs() -> tuple[ToolSpec, ...]:
+@lru_cache(maxsize=4)
+def discover_tool_specs(*, include_internal: bool = False) -> tuple[ToolSpec, ...]:
     discovered: dict[str, ToolSpec] = {}
     for module_info in pkgutil.iter_modules(toolbox.__path__):
-        if module_info.ispkg or module_info.name.startswith("_"):
+        is_internal = module_info.name.startswith("_")
+        if module_info.ispkg or (is_internal and not include_internal):
             continue
         module = importlib.import_module(f"{toolbox.__name__}.{module_info.name}")
         spec = getattr(module, "TOOL", None)
+        if spec is None and is_internal:
+            continue
         if not isinstance(spec, ToolSpec):
+            if is_internal:
+                continue
             raise RuntimeError(f"Tool module {module.__name__} must define TOOL as ToolSpec")
         tool_name = spec.definition.name
         if tool_name in discovered:
@@ -90,8 +95,11 @@ def build_tool_ui_payload(
 ) -> list[dict[str, Any]]:
     availability = ToolAvailability(memory_enabled=memory_enabled)
     current_tool_config = tool_config if isinstance(tool_config, dict) else {}
+    public_tool_names = {
+        spec.definition.name for spec in discover_tool_specs()
+    }
     items: list[dict[str, Any]] = []
-    for spec in discover_tool_specs():
+    for spec in discover_tool_specs(include_internal=True):
         if not spec.is_enabled(availability):
             continue
         spec_values = current_tool_config.get(spec.definition.name, {})
@@ -117,6 +125,7 @@ def build_tool_ui_payload(
                 "description": spec.definition.description,
                 "config_fields": fields,
                 "config_values": values,
+                "internal": spec.definition.name not in public_tool_names,
             }
         )
     return items
@@ -124,7 +133,7 @@ def build_tool_ui_payload(
 
 def build_default_tool_config() -> dict[str, dict[str, Any]]:
     defaults: dict[str, dict[str, Any]] = {}
-    for spec in discover_tool_specs():
+    for spec in discover_tool_specs(include_internal=True):
         if not spec.config_fields:
             continue
         defaults[spec.definition.name] = {
@@ -134,7 +143,7 @@ def build_default_tool_config() -> dict[str, dict[str, Any]]:
 
 
 def get_tool_config_field(tool_name: str, field_key: str) -> ToolConfigField | None:
-    for spec in discover_tool_specs():
+    for spec in discover_tool_specs(include_internal=True):
         if spec.definition.name != tool_name:
             continue
         for field in spec.config_fields:
@@ -204,3 +213,36 @@ class ToolRegistry:
             arguments,
         )
         return json.dumps(result, ensure_ascii=False)
+
+
+def execute_tool_by_name(
+    *,
+    settings: Any,
+    name: str,
+    arguments: dict[str, Any] | None = None,
+    include_internal: bool = False,
+) -> dict[str, Any]:
+    availability = ToolAvailability(
+        memory_enabled=bool(getattr(settings, "memory_enabled", False))
+    )
+    memory_store = (
+        MemoryStore.from_path(str(getattr(settings, "memory_dir", "")))
+        if availability.memory_enabled
+        else None
+    )
+    if memory_store is not None:
+        memory_store.ensure_initialized()
+    for spec in discover_tool_specs(include_internal=include_internal):
+        if spec.definition.name != name:
+            continue
+        if not spec.is_enabled(availability):
+            raise RuntimeError(f"Tool is disabled: {name}")
+        return spec.execute(
+            ToolContext(
+                settings=settings,
+                session_state=ToolSessionState(),
+                memory_store=memory_store,
+            ),
+            arguments if isinstance(arguments, dict) else {},
+        )
+    raise RuntimeError(f"Unknown tool: {name}")

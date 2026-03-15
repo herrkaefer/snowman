@@ -4,7 +4,7 @@ import logging
 from typing import Any
 
 from ._ha_helpers import home_assistant_request_json, normalize_state_payload
-from ..tools import ToolConfigField, ToolContext, ToolDefinition, ToolSpec
+from ..tools import ToolContext, ToolDefinition, ToolSpec
 
 
 LOGGER = logging.getLogger(__name__)
@@ -201,13 +201,4 @@ TOOL = ToolSpec(
         },
     ),
     execute=_execute,
-    config_fields=(
-        ToolConfigField(
-            key="ha_url",
-            label="HA URL",
-            field_type="text",
-            description="Base Home Assistant URL, for example http://homeassistant.local:8123.",
-            default="",
-        ),
-    ),
 )

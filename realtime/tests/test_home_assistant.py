@@ -12,11 +12,11 @@ from unittest.mock import patch
 from realtime.snowman_realtime.config import build_session_instructions
 from realtime.snowman_realtime.config_store import ConfigPaths
 from realtime.snowman_realtime.config_ui import (
+    _run_internal_tool,
     _tool_payload_for_api,
-    _verify_and_sync_home_assistant,
 )
 from realtime.snowman_realtime.toolbox._ha_helpers import home_assistant_request_json
-from realtime.snowman_realtime.toolbox._ha_registry_cache import (
+from realtime.snowman_realtime.toolbox._home_assistant_connect_and_sync import (
     load_registry_snapshot,
     registry_snapshot_status,
     verify_and_sync_registry_snapshot,
@@ -60,7 +60,7 @@ def _settings() -> SimpleNamespace:
     return SimpleNamespace(
         memory_enabled=False,
         tool_config={
-            "home_assistant_call_service": {
+            "home_assistant_connect_and_sync": {
                 "ha_url": "http://ha.local:8123",
             }
         },
@@ -75,6 +75,7 @@ class HomeAssistantToolTests(unittest.TestCase):
         self.assertIn("home_assistant_call_service", names)
         self.assertIn("home_assistant_get_state", names)
         self.assertIn("home_assistant_search_entities", names)
+        self.assertNotIn("home_assistant_connect_and_sync", names)
 
     def test_session_instructions_route_home_assistant_requests(self) -> None:
         instructions = build_session_instructions("Snowman", "Base prompt.")
@@ -87,7 +88,7 @@ class HomeAssistantToolTests(unittest.TestCase):
         payload = _tool_payload_for_api(
             {
                 "tool_config": {
-                    "home_assistant_call_service": {
+                    "home_assistant_connect_and_sync": {
                         "ha_url": "http://ha.local:8123",
                     }
                 },
@@ -98,13 +99,14 @@ class HomeAssistantToolTests(unittest.TestCase):
             }
         )
 
-        home_assistant = next(item for item in payload if item["name"] == "home_assistant_call_service")
+        home_assistant = next(item for item in payload if item["name"] == "home_assistant_connect_and_sync")
         self.assertEqual(
             home_assistant["config_values"]["ha_url"],
             "http://ha.local:8123",
         )
         self.assertEqual(home_assistant["secret_fields"][0]["key"], "ha_access_token")
         self.assertTrue(home_assistant["secret_fields"][0]["configured"])
+        self.assertTrue(home_assistant["internal"])
 
     def test_home_assistant_search_entities_matches_area_name(self) -> None:
         registry = ToolRegistry(_settings())
@@ -448,7 +450,7 @@ class HomeAssistantHelperTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
             with patch(
-                "realtime.snowman_realtime.toolbox._ha_registry_cache.resolve_config_paths",
+                "realtime.snowman_realtime.toolbox._home_assistant_connect_and_sync.resolve_config_paths",
                 return_value=ConfigPaths(
                     data_dir=temp_path,
                     config_path=temp_path / "config.json",
@@ -456,7 +458,7 @@ class HomeAssistantHelperTests(unittest.TestCase):
                     identity_path=temp_path / "identity.md",
                 ),
             ), patch(
-                "realtime.snowman_realtime.toolbox._ha_registry_cache.websocket.create_connection",
+                "realtime.snowman_realtime.toolbox._home_assistant_connect_and_sync.websocket.create_connection",
                 return_value=fake_socket,
             ):
                 snapshot = verify_and_sync_registry_snapshot(settings)
@@ -473,45 +475,31 @@ class HomeAssistantHelperTests(unittest.TestCase):
         self.assertEqual(fake_socket.sent_messages[0]["type"], "auth")
         self.assertEqual(fake_socket.sent_messages[1]["type"], "get_config")
 
-    def test_verify_and_sync_home_assistant_helper_returns_registry_status(self) -> None:
-        body = {
+    def test_run_internal_tool_returns_registry_status(self) -> None:
+        config_payload = {
             "tool_config": {
-                "home_assistant_call_service": {
+                "home_assistant_connect_and_sync": {
                     "ha_url": "http://ha.local:8123",
                 }
             },
-            "ha_access_token": "",
+            "ha_access_token": "saved-token",
         }
         with patch(
-            "realtime.snowman_realtime.config_ui._load_config",
+            "realtime.snowman_realtime.config_ui.execute_tool_by_name",
             return_value={
-                "tool_config": {
-                    "home_assistant_call_service": {
-                        "ha_url": "http://ha.local:8123",
-                    }
+                "ok": True,
+                "message": "Home Assistant verified.",
+                "registry_cache": {
+                    "exists": True,
+                    "fetched_at": "2026-03-13T12:00:00Z",
+                    "counts": {"areas": 1, "devices": 1, "entities": 1},
                 },
-                "ha_access_token": "saved-token",
             },
         ), patch(
-            "realtime.snowman_realtime.config_ui.verify_and_sync_registry_snapshot",
-            return_value={
-                "areas": [{"area_id": "area_1"}],
-                "devices": [{"id": "device_1"}],
-                "entities": [{"entity_id": "light.test"}],
-            },
-        ), patch(
-            "realtime.snowman_realtime.config_ui.registry_snapshot_status",
-            return_value={
-                "exists": True,
-                "fetched_at": "2026-03-13T12:00:00Z",
-                "counts": {"areas": 1, "devices": 1, "entities": 1},
-                "matches_current_url": True,
-                "path": "/tmp/registry_snapshot.json",
-                "ha_url": "http://ha.local:8123",
-                "configured_ha_url": "http://ha.local:8123",
-            },
+            "realtime.snowman_realtime.config_ui._settings_namespace_for_config",
+            return_value=_settings(),
         ):
-            payload = _verify_and_sync_home_assistant(body)
+            payload = _run_internal_tool(config_payload, "home_assistant_connect_and_sync")
 
         self.assertIn("Home Assistant verified.", payload["message"])
         self.assertTrue(payload["registry_cache"]["exists"])

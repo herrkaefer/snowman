@@ -33,11 +33,10 @@ from .config_store import (
     write_config_files,
 )
 from .memory import MemoryStore
-from .toolbox._ha_registry_cache import (
+from .toolbox._home_assistant_connect_and_sync import (
     registry_snapshot_status,
-    verify_and_sync_registry_snapshot,
 )
-from .tools import build_tool_ui_payload
+from .tools import build_tool_ui_payload, execute_tool_by_name
 from .version import VERSION
 
 
@@ -947,7 +946,7 @@ HTML_PAGE = """<!doctype html>
       return `
         <div class="tool-fields">
           <div class="tool-action-row">
-            <button id="verify_home_assistant" class="secondary" type="button">Verify & Sync</button>
+            <button class="secondary" type="button" data-run-internal-tool="${escapeHtml(tool.name)}">Verify & Sync</button>
           </div>
           <div id="ha_registry_cache_status" class="${status.className}">${escapeHtml(status.text)}</div>
         </div>
@@ -981,7 +980,7 @@ HTML_PAGE = """<!doctype html>
                 ? `<div class="tool-fields">${tool.config_fields.map((field) => renderToolField(tool, field)).join("")}</div>`
                 : ""
             }
-            ${tool.name === "home_assistant_call_service" ? renderHomeAssistantActions(tool) : ""}
+            ${tool.name === "home_assistant_connect_and_sync" ? renderHomeAssistantActions(tool) : ""}
           </div>
         `)
         .join("");
@@ -1444,8 +1443,8 @@ HTML_PAGE = """<!doctype html>
       }
     }
 
-    async function verifyHomeAssistant() {
-      const button = $("verify_home_assistant");
+    async function runInternalTool(toolName) {
+      const button = document.querySelector(`[data-run-internal-tool="${toolName}"]`);
       if (!button) {
         return;
       }
@@ -1455,18 +1454,25 @@ HTML_PAGE = """<!doctype html>
       }
       try {
         button.disabled = true;
-        setMessage("Verifying Home Assistant connection and syncing registry...");
-        const result = await readJson("/api/tools/home-assistant/verify", {
+        setMessage("Running internal tool...");
+        const result = await readJson("/api/tools/internal/run", {
           method: "POST",
-          body: JSON.stringify(payload)
+          body: JSON.stringify({
+            tool_name: toolName,
+            config_payload: payload
+          })
         });
-        updateHomeAssistantRegistryStatus(result.registry_cache || {});
-        setMessage(result.message || "Home Assistant registry synced.", "good");
+        if (toolName === "home_assistant_connect_and_sync") {
+          updateHomeAssistantRegistryStatus(result.registry_cache || {});
+        }
+        setMessage(result.message || "Internal tool completed.", "good");
       } catch (error) {
-        updateHomeAssistantRegistryStatus({
-          exists: false,
-          configured_ha_url: (($("tool_config__home_assistant_call_service__ha_url") || {}).value || "").trim()
-        });
+        if (toolName === "home_assistant_connect_and_sync") {
+          updateHomeAssistantRegistryStatus({
+            exists: false,
+            configured_ha_url: (($("tool_config__home_assistant_connect_and_sync__ha_url") || {}).value || "").trim()
+          });
+        }
         setMessage(error.message, "warn");
       } finally {
         button.disabled = false;
@@ -1535,11 +1541,11 @@ HTML_PAGE = """<!doctype html>
     $("restore_profile_baseline").addEventListener("click", restoreProfileBaseline);
     $("save_memory_index").addEventListener("click", saveMemoryIndex);
     $("tools_list").addEventListener("click", (event) => {
-      const button = event.target.closest("#verify_home_assistant");
+      const button = event.target.closest("[data-run-internal-tool]");
       if (!button) {
         return;
       }
-      verifyHomeAssistant();
+      runInternalTool(button.getAttribute("data-run-internal-tool") || "");
     });
     $("conversation_list").addEventListener("click", (event) => {
       const button = event.target.closest("[data-delete-session-id]");
@@ -1658,9 +1664,9 @@ class ConfigUIHandler(BaseHTTPRequestHandler):
                 return
             self._write_json(result)
             return
-        if parsed.path == "/api/tools/home-assistant/verify":
+        if parsed.path == "/api/tools/internal/run":
             try:
-                result = _verify_and_sync_home_assistant(body)
+                result = _run_internal_tool_endpoint(body)
             except RuntimeError as exc:
                 self._write_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
                 return
@@ -1811,7 +1817,7 @@ def _tool_payload_for_api(config_payload: dict[str, object]) -> list[dict[str, o
     )
     ha_access_token = str(config_payload.get("ha_access_token", "")).strip()
     for item in payload:
-        if item.get("name") != "home_assistant_call_service":
+        if item.get("name") != "home_assistant_connect_and_sync":
             continue
         item["secret_fields"] = [
             {
@@ -1924,22 +1930,25 @@ def _delete_recent_session(
     return _memory_payload_for_api(config_payload)
 
 
-def _verify_and_sync_home_assistant(body: dict[str, object]) -> dict[str, object]:
-    merged = merge_config_values(_load_config(), body)
-    settings = _settings_namespace_for_config(merged)
-    snapshot = verify_and_sync_registry_snapshot(settings)
-    counts = {
-        "areas": len(snapshot.get("areas", [])) if isinstance(snapshot.get("areas"), list) else 0,
-        "devices": len(snapshot.get("devices", [])) if isinstance(snapshot.get("devices"), list) else 0,
-        "entities": len(snapshot.get("entities", [])) if isinstance(snapshot.get("entities"), list) else 0,
-    }
-    return {
-        "message": (
-            "Home Assistant verified. "
-            f"Synced {counts['areas']} areas, {counts['devices']} devices, {counts['entities']} entities."
-        ),
-        "registry_cache": registry_snapshot_status(settings),
-    }
+def _run_internal_tool_endpoint(body: dict[str, object]) -> dict[str, object]:
+    tool_name = str(body.get("tool_name", "")).strip()
+    if not tool_name:
+        raise RuntimeError("tool_name is required.")
+    config_payload = body.get("config_payload", {})
+    merged = merge_config_values(
+        _load_config(),
+        config_payload if isinstance(config_payload, dict) else {},
+    )
+    return _run_internal_tool(merged, tool_name)
+
+
+def _run_internal_tool(config_payload: dict[str, object], tool_name: str) -> dict[str, object]:
+    return execute_tool_by_name(
+        settings=_settings_namespace_for_config(config_payload),
+        name=tool_name,
+        arguments={},
+        include_internal=True,
+    )
 
 
 def _status_payload(
