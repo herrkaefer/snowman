@@ -108,6 +108,28 @@ class HomeAssistantToolTests(unittest.TestCase):
         self.assertTrue(home_assistant["secret_fields"][0]["configured"])
         self.assertTrue(home_assistant["internal"])
 
+    def test_tool_registry_hides_home_assistant_tools_without_token(self) -> None:
+        settings = _settings()
+        settings.ha_access_token = ""
+
+        registry = ToolRegistry(settings)
+        names = [tool.name for tool in registry.tools]
+
+        self.assertNotIn("home_assistant_call_service", names)
+        self.assertNotIn("home_assistant_get_state", names)
+        self.assertNotIn("home_assistant_search_entities", names)
+
+    def test_tool_registry_hides_home_assistant_tools_without_url(self) -> None:
+        settings = _settings()
+        settings.tool_config["home_assistant_connect_and_sync"]["ha_url"] = ""
+
+        registry = ToolRegistry(settings)
+        names = [tool.name for tool in registry.tools]
+
+        self.assertNotIn("home_assistant_call_service", names)
+        self.assertNotIn("home_assistant_get_state", names)
+        self.assertNotIn("home_assistant_search_entities", names)
+
     def test_home_assistant_search_entities_matches_area_name(self) -> None:
         registry = ToolRegistry(_settings())
         with patch(

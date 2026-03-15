@@ -11,6 +11,15 @@ DEFAULT_HA_TIMEOUT_SECONDS = 12
 AREA_LOOKUP_TEMPLATE = "{{ area_name(%r) or '' }}"
 
 
+def has_home_assistant_runtime_config(settings: Any) -> bool:
+    try:
+        home_assistant_url(settings)
+        home_assistant_token(settings)
+    except RuntimeError:
+        return False
+    return True
+
+
 def home_assistant_url(settings: Any) -> str:
     tool_config = getattr(settings, "tool_config", {})
     home_assistant_config = {}

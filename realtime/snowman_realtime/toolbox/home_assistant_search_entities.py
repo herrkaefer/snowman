@@ -3,9 +3,14 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from ._ha_helpers import fetch_states, lookup_area_name, normalize_state_payload
+from ._ha_helpers import (
+    fetch_states,
+    has_home_assistant_runtime_config,
+    lookup_area_name,
+    normalize_state_payload,
+)
 from ._home_assistant_connect_and_sync import load_registry_snapshot
-from ..tools import ToolContext, ToolDefinition, ToolSpec
+from ..tools import ToolAvailability, ToolContext, ToolDefinition, ToolSpec
 
 
 LOGGER = logging.getLogger(__name__)
@@ -34,6 +39,10 @@ NAME_ALIASES = {
     "灯": ("light", "lights", "lamp"),
     "空调": ("climate", "thermostat", "air conditioner"),
 }
+
+
+def _runtime_enabled(settings: Any, _: ToolAvailability) -> bool:
+    return has_home_assistant_runtime_config(settings)
 
 
 def _execute(context: ToolContext, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -370,4 +379,5 @@ TOOL = ToolSpec(
         },
     ),
     execute=_execute,
+    is_runtime_enabled=_runtime_enabled,
 )

@@ -39,12 +39,17 @@ def _always_enabled(_: ToolAvailability) -> bool:
     return True
 
 
+def _always_runtime_enabled(_: Any, __: ToolAvailability) -> bool:
+    return True
+
+
 @dataclass(frozen=True)
 class ToolSpec:
     definition: ToolDefinition
     execute: Callable[[ToolContext, dict[str, Any]], dict[str, Any]]
     config_fields: tuple["ToolConfigField", ...] = ()
     is_enabled: Callable[[ToolAvailability], bool] = _always_enabled
+    is_runtime_enabled: Callable[[Any, ToolAvailability], bool] = _always_runtime_enabled
 
 
 @dataclass(frozen=True)
@@ -163,6 +168,7 @@ class ToolRegistry:
             spec.definition.name: spec
             for spec in discover_tool_specs()
             if spec.is_enabled(self._availability)
+            and spec.is_runtime_enabled(settings, self._availability)
         }
         self._definitions = [
             spec.definition for name, spec in sorted(self._specs_by_name.items())
@@ -235,7 +241,7 @@ def execute_tool_by_name(
     for spec in discover_tool_specs(include_internal=include_internal):
         if spec.definition.name != name:
             continue
-        if not spec.is_enabled(availability):
+        if not spec.is_enabled(availability) or not spec.is_runtime_enabled(settings, availability):
             raise RuntimeError(f"Tool is disabled: {name}")
         return spec.execute(
             ToolContext(

@@ -3,11 +3,19 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from ._ha_helpers import home_assistant_request_json, normalize_state_payload
-from ..tools import ToolContext, ToolDefinition, ToolSpec
+from ._ha_helpers import (
+    has_home_assistant_runtime_config,
+    home_assistant_request_json,
+    normalize_state_payload,
+)
+from ..tools import ToolAvailability, ToolContext, ToolDefinition, ToolSpec
 
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _runtime_enabled(settings: Any, _: ToolAvailability) -> bool:
+    return has_home_assistant_runtime_config(settings)
 
 
 def _execute(context: ToolContext, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -201,4 +209,5 @@ TOOL = ToolSpec(
         },
     ),
     execute=_execute,
+    is_runtime_enabled=_runtime_enabled,
 )

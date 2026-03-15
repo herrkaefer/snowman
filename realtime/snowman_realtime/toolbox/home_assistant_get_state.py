@@ -3,11 +3,20 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from ._ha_helpers import fetch_state, lookup_area_name, normalize_state_payload
-from ..tools import ToolContext, ToolDefinition, ToolSpec
+from ._ha_helpers import (
+    fetch_state,
+    has_home_assistant_runtime_config,
+    lookup_area_name,
+    normalize_state_payload,
+)
+from ..tools import ToolAvailability, ToolContext, ToolDefinition, ToolSpec
 
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _runtime_enabled(settings: Any, _: ToolAvailability) -> bool:
+    return has_home_assistant_runtime_config(settings)
 
 
 def _execute(context: ToolContext, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -88,4 +97,5 @@ TOOL = ToolSpec(
         },
     ),
     execute=_execute,
+    is_runtime_enabled=_runtime_enabled,
 )
