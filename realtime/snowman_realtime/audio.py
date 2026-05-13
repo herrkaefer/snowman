@@ -254,12 +254,19 @@ def _safe_input_device_names() -> list[str]:
 def _parse_playback_device_lines(stdout: str) -> list[dict[str, str]]:
     options: list[dict[str, str]] = []
     for line in stdout.splitlines():
-        match = re.search(r"card (\d+): .*device (\d+):", line)
+        match = re.search(r"card (\d+):\s+([^\s\[]+).*device (\d+):", line)
         if not match:
             continue
+        card_number = match.group(1)
+        card_id = match.group(2)
+        device_number = match.group(3)
+        if card_id:
+            value = f"plughw:CARD={card_id},DEV={device_number}"
+        else:
+            value = f"plughw:{card_number},{device_number}"
         options.append(
             {
-                "value": f"plughw:{match.group(1)},{match.group(2)}",
+                "value": value,
                 "label": line.strip(),
             }
         )

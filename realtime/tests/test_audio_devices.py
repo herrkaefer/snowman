@@ -17,11 +17,11 @@ card 2: sndrpigooglevoi [snd_rpi_googlevoicehat_soundcar], device 0: Google voic
             _parse_playback_device_lines(stdout),
             [
                 {
-                    "value": "plughw:1,0",
+                    "value": "plughw:CARD=Device,DEV=0",
                     "label": "card 1: Device [USB Audio Device], device 0: USB Audio [USB Audio]",
                 },
                 {
-                    "value": "plughw:2,0",
+                    "value": "plughw:CARD=sndrpigooglevoi,DEV=0",
                     "label": "card 2: sndrpigooglevoi [snd_rpi_googlevoicehat_soundcar], device 0: Google voiceHAT SoundCard HiFi voicehat-hifi-0 [Google voiceHAT SoundCard HiFi voicehat-hifi-0]",
                 },
             ],
