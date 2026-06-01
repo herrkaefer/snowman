@@ -13,6 +13,15 @@ class EndPhraseDetectionTests(unittest.TestCase):
         self.assertTrue(assistant._is_end_transcript("Thanks"))
         self.assertTrue(assistant._is_end_transcript("就这样吧"))
 
+    def test_farewell_variants_match_inside_transcript(self) -> None:
+        assistant = SnowmanRealtimeAssistant.__new__(SnowmanRealtimeAssistant)
+
+        self.assertTrue(assistant._is_end_transcript("ok, goodbye"))
+        self.assertTrue(assistant._is_end_transcript("ok bye-bye for now"))
+        self.assertTrue(assistant._is_end_transcript("byeee"))
+        self.assertTrue(assistant._is_end_transcript("那就这样，再见"))
+        self.assertTrue(assistant._is_end_transcript("我们下次見"))
+
     def test_embedded_end_phrase_does_not_match(self) -> None:
         assistant = SnowmanRealtimeAssistant.__new__(SnowmanRealtimeAssistant)
 
@@ -30,6 +39,9 @@ class EndPhraseDetectionTests(unittest.TestCase):
             assistant._is_end_transcript(
                 "谢谢这个我懂了，但是我还有一个问题"
             )
+        )
+        self.assertFalse(
+            assistant._is_end_transcript("Good by Ernie is a sentence fragment.")
         )
 
 

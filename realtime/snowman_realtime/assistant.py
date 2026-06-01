@@ -3,6 +3,7 @@ from __future__ import annotations
 import audioop
 import json
 import logging
+import re
 import threading
 import time
 from collections import deque
@@ -106,6 +107,22 @@ NORMALIZED_END_PHRASES = {
     "就这样吧",
     "结束对话",
     "結束對話",
+}
+ENGLISH_FAREWELL_PATTERN = re.compile(
+    r"\b(?:good[\W_]*bye+|bye+[\W_]*(?:bye+)?)\b",
+    re.IGNORECASE,
+)
+CHINESE_FAREWELL_PHRASES = {
+    "再见",
+    "再見",
+    "拜拜",
+    "掰掰",
+    "再会",
+    "再會",
+    "回见",
+    "回見",
+    "下次见",
+    "下次見",
 }
 
 
@@ -390,6 +407,10 @@ class SnowmanRealtimeAssistant:
         normalized = "".join(ch for ch in transcript.strip().lower() if ch.isalnum())
         if not normalized:
             return False
+        if ENGLISH_FAREWELL_PATTERN.search(transcript):
+            return True
+        if any(phrase in normalized for phrase in CHINESE_FAREWELL_PHRASES):
+            return True
         return normalized in NORMALIZED_END_PHRASES
 
     def _run_session_window(self) -> None:
